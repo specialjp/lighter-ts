@@ -1,19 +1,33 @@
 import { ApiClient } from './api-client';
-import { AccountParams, PaginationParams } from '../types';
+import { AccountParams } from '../types';
+
+export interface AccountResponse {
+  code: number;
+  total: number;
+  accounts: Account[];
+}
 
 export interface Account {
-  index: string;
+  code: number;
+  account_type: number;
+  index: number;
   l1_address: string;
-  l2_address: string;
-  nonce: string;
-  balance: string;
-  margin_balance: string;
-  free_margin: string;
-  margin_used: string;
-  margin_ratio: string;
+  cancel_all_time: number;
+  total_order_count: number;
+  total_isolated_order_count: number;
+  pending_order_count: number;
+  available_balance: string;
+  status: number;
+  collateral: string;
+  account_index: number;
+  name: string;
+  description: string;
+  can_invite: boolean;
+  referral_points_percentage: string;
   positions: AccountPosition[];
-  orders: Order[];
-  trades: Trade[];
+  total_asset_value: string;
+  cross_asset_value: string;
+  shares: any[];
 }
 
 export interface AccountPosition {
@@ -85,27 +99,28 @@ export class AccountApi {
     this.client = client;
   }
 
-  public async getAccount(params: AccountParams): Promise<Account> {
-    const response = await this.client.get<Account>('/api/v1/account', {
+  public async getAccount(params: AccountParams): Promise<AccountResponse> {
+    const response = await this.client.get<AccountResponse>('/api/v1/account', {
       by: params.by,
       value: params.value,
     });
     return response.data;
   }
 
-  public async getAccounts(params?: PaginationParams): Promise<Account[]> {
-    const response = await this.client.get<Account[]>('/api/v1/accounts', params);
-    return response.data;
-  }
-
   public async getAccountsByL1Address(l1Address: string): Promise<Account[]> {
-    const response = await this.client.get<Account[]>('/api/v1/accountsByL1Address', {
-      l1_address: l1Address,
-    });
+    const response = await this.client.get<Account[]>(
+      '/api/v1/accountsByL1Address',
+      {
+        l1_address: l1Address,
+      }
+    );
     return response.data;
   }
 
-  public async getApiKeys(accountIndex: number, apiKeyIndex: number): Promise<AccountApiKeys> {
+  public async getApiKeys(
+    accountIndex: number,
+    apiKeyIndex: number
+  ): Promise<AccountApiKeys> {
     const response = await this.client.get<AccountApiKeys>('/api/v1/apikeys', {
       account_index: accountIndex,
       api_key_index: apiKeyIndex,
@@ -120,14 +135,22 @@ export class AccountApi {
     return response.data;
   }
 
-  public async isWhitelisted(accountIndex: number): Promise<{ is_whitelisted: boolean }> {
-    const response = await this.client.get<{ is_whitelisted: boolean }>('/api/v1/isWhitelisted', {
-      account_index: accountIndex,
-    });
+  public async isWhitelisted(
+    accountIndex: number
+  ): Promise<{ is_whitelisted: boolean }> {
+    const response = await this.client.get<{ is_whitelisted: boolean }>(
+      '/api/v1/isWhitelisted',
+      {
+        account_index: accountIndex,
+      }
+    );
     return response.data;
   }
 
-  public async getPnL(accountIndex: number, params?: { start_time?: number; end_time?: number }): Promise<any> {
+  public async getPnL(
+    accountIndex: number,
+    params?: { start_time?: number; end_time?: number }
+  ): Promise<any> {
     const response = await this.client.get('/api/v1/pnl', {
       account_index: accountIndex,
       ...params,
@@ -135,12 +158,19 @@ export class AccountApi {
     return response.data;
   }
 
-  public async getPublicPools(filter: string = 'all', limit: number = 10, index: number = 0): Promise<PublicPool[]> {
-    const response = await this.client.get<PublicPool[]>('/api/v1/publicPools', {
-      filter,
-      limit,
-      index,
-    });
+  public async getPublicPools(
+    filter: string = 'all',
+    limit: number = 10,
+    index: number = 0
+  ): Promise<PublicPool[]> {
+    const response = await this.client.get<PublicPool[]>(
+      '/api/v1/publicPools',
+      {
+        filter,
+        limit,
+        index,
+      }
+    );
     return response.data;
   }
 }
