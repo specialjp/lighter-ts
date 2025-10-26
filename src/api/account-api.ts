@@ -7,6 +7,12 @@ export interface AccountResponse {
   accounts: Account[];
 }
 
+export interface SubAccount {
+  index: string;
+  l1_address: string;
+  l2_address: string;
+}
+
 export interface Account {
   code: number;
   account_type: number;

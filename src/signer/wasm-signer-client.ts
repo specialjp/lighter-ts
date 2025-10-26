@@ -61,6 +61,7 @@ export interface CancelOrderParams {
 export interface ChangeApiKeyParams {
   ethPrivateKey: string;
   newPubkey: string;
+  newApiKeyIndex?: number; // Optional, defaults to config.apiKeyIndex + 1
 }
 
 export class SignerClient {
@@ -115,6 +116,14 @@ export class SignerClient {
   static readonly DEFAULT_IOC_EXPIRY = 0
   static readonly DEFAULT_10_MIN_AUTH_EXPIRY = -1
   static readonly MINUTE = 60
+
+  // Transaction status codes
+  static readonly TX_STATUS_PENDING = 0
+  static readonly TX_STATUS_QUEUED = 1
+  static readonly TX_STATUS_COMMITTED = 2
+  static readonly TX_STATUS_EXECUTED = 3
+  static readonly TX_STATUS_FAILED = 4
+  static readonly TX_STATUS_REJECTED = 5
 
   static readonly CROSS_MARGIN_MODE = 0
   static readonly ISOLATED_MARGIN_MODE = 1
@@ -252,8 +261,6 @@ export class SignerClient {
    */
   async initialize(): Promise<void> {
     if (this.signerType === 'wasm' || this.signerType === 'node-wasm') {
-      console.log('Initializing signer client, type:', this.signerType);
-      console.log('Wallet instance:', this.wallet.constructor.name);
       await (this.wallet as WasmSignerClient | NodeWasmSignerClient).initialize();
       // Leave client creation to ensureWasmClient or server path
     }
@@ -417,12 +424,25 @@ export class SignerClient {
     // Get next nonce (with caching)
     const nextNonce = await this.getNextNonce();
 
-    // Handle order expiry - use real timestamp for GTT orders (milliseconds)
-    const orderExpiry = params.orderExpiry ?? SignerClient.DEFAULT_28_DAY_ORDER_EXPIRY;
+    // Handle order expiry
+    let orderExpiry = params.orderExpiry ?? SignerClient.DEFAULT_28_DAY_ORDER_EXPIRY;
+    
+    // CRITICAL: Python SDK uses -1 for DEFAULT_28_DAY_ORDER_EXPIRY
+    // The server-side converts -1 to proper 28-day timestamp
+    // WASM/Go validation requires -1 to be converted to actual timestamp CLIENT-SIDE
+    if (orderExpiry === -1 || orderExpiry === SignerClient.DEFAULT_28_DAY_ORDER_EXPIRY) {
+      // Convert -1 to 28 days from now (in milliseconds)
+      orderExpiry = Date.now() + (28 * 24 * 60 * 60 * 1000);
+    }
 
     // Use WASM signer
-    // For IOC orders, use NilOrderExpiry (0)
-    const wasmOrderExpiry = params.timeInForce === SignerClient.ORDER_TIME_IN_FORCE_IMMEDIATE_OR_CANCEL ? 
+    // For IOC orders, use NilOrderExpiry (0) EXCEPT for SL/TP orders
+    const isSLTPOrder = params.orderType === SignerClient.ORDER_TYPE_STOP_LOSS || 
+                        params.orderType === SignerClient.ORDER_TYPE_STOP_LOSS_LIMIT ||
+                        params.orderType === SignerClient.ORDER_TYPE_TAKE_PROFIT ||
+                        params.orderType === SignerClient.ORDER_TYPE_TAKE_PROFIT_LIMIT;
+    
+    const wasmOrderExpiry = (params.timeInForce === SignerClient.ORDER_TIME_IN_FORCE_IMMEDIATE_OR_CANCEL && !isSLTPOrder) ? 
       0 : orderExpiry;
       
     const wasmParams = {
@@ -441,10 +461,6 @@ export class SignerClient {
 
     const txInfoStr = await (this.wallet as WasmSignerClient | NodeWasmSignerClient).signCreateOrder(wasmParams);
     // Send exactly what WASM produced, using urlencoded form like Python/Go
-    // Note: This may contain sensitive information - remove in production
-    if (process.env["NODE_ENV"] === 'development') {
-      console.log('WASM signCreateOrder result:', txInfoStr);
-    }
     const txHash = await this.transactionApi.sendTxWithIndices(
       SignerClient.TX_TYPE_CREATE_ORDER,
       txInfoStr,
@@ -507,15 +523,6 @@ export class SignerClient {
 
       const txInfoStr = await (this.wallet as WasmSignerClient | NodeWasmSignerClient).signCreateOrder(wasmParams);
       
-    // Debug: Log the transaction info string to see what WASM is producing
-    // Note: This may contain sensitive information - remove in production
-    if (process.env["NODE_ENV"] === 'development') {
-      // Note: This may contain sensitive information - remove in production
-    if (process.env["NODE_ENV"] === 'development') {
-      console.log('WASM signCreateOrder result:', txInfoStr);
-    }
-    }
-      
       const txHash = await this.transactionApi.sendTxWithIndices(
         SignerClient.TX_TYPE_CREATE_ORDER,
         txInfoStr,
@@ -572,7 +579,6 @@ export class SignerClient {
       });
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-      console.error('Error creating market order with max slippage:', errorMessage);
       return [null, '', errorMessage];
     }
   }
@@ -612,7 +618,6 @@ export class SignerClient {
       });
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-      console.error('Error creating market order if slippage:', errorMessage);
       return [null, '', errorMessage];
     }
   }
@@ -637,14 +642,62 @@ export class SignerClient {
       return [JSON.parse(txInfoStr), txHash.tx_hash || txHash.hash || '', null];
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-      console.error('Error canceling order:', errorMessage);
       return [null, '', errorMessage];
     }
   }
 
-  async changeApiKey(_params: ChangeApiKeyParams): Promise<[any, string, string | null]> {
-    // WASM signer doesn't support changeApiKey yet
-    throw new Error('changeApiKey not supported with WASM signer.');
+  /**
+   * Change API key (register new public key)
+   * @param ethPrivateKey - Ethereum private key for L1 signature
+   * @param newPubkey - New public key to register
+   * @returns [txHash, txInfo, error]
+   */
+  async changeApiKey(params: ChangeApiKeyParams): Promise<[any, string, string | null]> {
+    try {
+      // Determine new API key index (default to current + 1)
+      const newApiKeyIndex = params.newApiKeyIndex ?? (this.config.apiKeyIndex + 1);
+      
+      // For first-time registration of a new key slot, use nonce 0
+      // For subsequent uses of that key, nonce increments
+      const nonce = 0;
+
+      // Create L1 signature message with NEW API key index
+      const nonceHex = '0x' + nonce.toString(16).padStart(16, '0');
+      const accountIndexHex = '0x' + this.config.accountIndex.toString(16).padStart(16, '0');
+      const newApiKeyIndexHex = '0x' + newApiKeyIndex.toString(16).padStart(16, '0');
+      
+      const l1Message = `Register Lighter Account\n\npubkey: 0x${params.newPubkey}\nnonce: ${nonceHex}\naccount index: ${accountIndexHex}\napi key index: ${newApiKeyIndexHex}\nOnly sign this message for a trusted client!`;
+      
+      // Sign with ETH key
+      const ethers = await import('ethers');
+      const wallet = new ethers.Wallet(params.ethPrivateKey);
+      const l1Sig = await wallet.signMessage(l1Message);
+
+      // Sign ChangePubKey transaction with current API key
+      const expiredAt = Date.now() + (10 * 60 * 1000); // 10 minutes
+      
+      const result = await (this.wallet as WasmSignerClient | NodeWasmSignerClient).signChangePubKey({
+        pubkey: params.newPubkey,
+        l1Sig,
+        newApiKeyIndex,
+        nonce,
+        expiredAt
+      });
+
+      if (result.error) {
+        return [null, '', result.error];
+      }
+
+      // Send transaction - try simple sendTx first
+      const txHash = await this.transactionApi.sendTx(
+        SignerClient.TX_TYPE_CHANGE_PUB_KEY,
+        result.txInfo
+      );
+
+      return [txHash, txHash.tx_hash || txHash.hash || '', null];
+    } catch (error) {
+      return [null, '', error instanceof Error ? error.message : 'Unknown error'];
+    }
   }
 
   async createAuthTokenWithExpiry(expirySeconds: number = SignerClient.DEFAULT_10_MIN_AUTH_EXPIRY): Promise<string> {
@@ -655,7 +708,6 @@ export class SignerClient {
       return await (this.wallet as WasmSignerClient | NodeWasmSignerClient).createAuthToken(deadline);
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-      console.error('Error creating auth token:', errorMessage);
       throw new Error(errorMessage);
     }
   }
@@ -667,18 +719,46 @@ export class SignerClient {
     try {
       return await (this.wallet as WasmSignerClient | NodeWasmSignerClient).generateAPIKey(seed);
     } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-      console.error('Error generating API key:', errorMessage);
       return null;
     }
   }
 
   /**
-   * Withdraw USDC from account
+   * Withdraw USDC from account to Ethereum L1
+   * @param usdcAmount - Amount of USDC to withdraw
+   * @param nonce - Optional nonce (will fetch if not provided)
+   * @returns [withdrawInfo, txHash, error]
    */
-  async withdraw(_usdcAmount: number, _nonce: number = -1): Promise<[any, string, string | null]> {
-    // WASM signer doesn't support withdraw yet
-    throw new Error('withdraw not supported with WASM signer.');
+  async withdraw(usdcAmount: number, nonce: number = -1): Promise<[any, string, string | null]> {
+    try {
+      // Get next nonce if not provided (with caching)
+      const nextNonce = nonce === -1 ? 
+        await this.getNextNonce() :
+        { nonce };
+
+      // Scale USDC amount to proper units (multiply by 1e6)
+      const scaledAmount = Math.floor(usdcAmount * SignerClient.USDC_TICKER_SCALE);
+
+      // Sign withdraw transaction using WASM
+      const txInfo = await (this.wallet as WasmSignerClient | NodeWasmSignerClient).signWithdraw({
+        usdcAmount: scaledAmount,
+        nonce: nextNonce.nonce
+      });
+
+      if (txInfo.error) {
+        return [null, '', txInfo.error];
+      }
+
+      // Send the signed transaction
+      const txHash = await this.transactionApi.sendTx(
+        SignerClient.TX_TYPE_WITHDRAW,
+        txInfo.txInfo
+      );
+
+      return [JSON.parse(txInfo.txInfo), txHash.tx_hash || txHash.hash || '', null];
+    } catch (error) {
+      return [null, '', error instanceof Error ? error.message : 'Unknown error'];
+    }
   }
 
   /**
@@ -720,7 +800,6 @@ export class SignerClient {
       return [txInfo, apiResponse, null];
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-      console.error('Error canceling all orders:', errorMessage);
       return [null, null, errorMessage];
     }
   }
@@ -732,17 +811,20 @@ export class SignerClient {
   async closeAllPositions(): Promise<[any[], any[], string[]]> {
     try {
       // Get account data to retrieve open positions
-      const account = await this.accountApi.getAccount({
+      const accountData = await this.accountApi.getAccount({
         by: 'index',
         value: this.config.accountIndex.toString()
       });
+      
+      // Extract account from response
+      const account = (accountData as any).accounts?.[0] || accountData;
       
       // Check if account has positions data
       if (!account.positions || !Array.isArray(account.positions)) {
         return [[], [], []]; // No positions data available
       }
       
-      const openPositions = account.positions.filter(pos => parseFloat(pos.size) > 0);
+      const openPositions = account.positions.filter((pos: any) => parseFloat(pos.position) !== 0);
       
       if (openPositions.length === 0) {
         return [[], [], []]; // No positions to close
@@ -755,25 +837,33 @@ export class SignerClient {
       // Close each position by creating opposite market orders
       for (const position of openPositions) {
         try {
-          const isLong = position.side === 'long';
-          const positionSize = Math.floor(parseFloat(position.size));
+          // sign: -1 = short position, 1 = long position
+          const isLong = position.sign === 1;
+          const positionSize = Math.abs(parseFloat(position.position));
+          
+          // Convert position size to base units (multiply by appropriate scale)
+          // For ETH, position is in decimal (0.0030 = 3000 in base units)
+          const baseAmount = Math.floor(positionSize * 1000000); // Scale appropriately
+          
+          // Get mark price from position_value / position
+          const avgPrice = Math.abs(parseFloat(position.avg_entry_price));
+          const priceInUnits = Math.floor(avgPrice * 100000); // Convert to price units
           
           // Create market order in opposite direction to close position
           const [tx, apiResponse, err] = await this.createMarketOrder({
             marketIndex: position.market_id,
-            clientOrderIndex: Date.now() + Math.random() * 1000, // Unique index
-            baseAmount: positionSize,
-            avgExecutionPrice: Math.floor(parseFloat(position.mark_price)), // Use mark price as reference
-            isAsk: isLong, // If long position, sell to close; if short, buy to close
+            clientOrderIndex: Date.now() + Math.floor(Math.random() * 1000), // Unique index
+            baseAmount: baseAmount,
+            avgExecutionPrice: priceInUnits * 2, // Give enough room for execution
+            isAsk: isLong, // If long position (sign=1), sell to close; if short (sign=-1), buy to close
             reduceOnly: true // This is a position-closing order
           });
 
           if (err) {
-            errors.push(`Failed to close position in market ${position.market_id}: ${err}`);
+            errors.push(`Failed to close position in market ${position.market_id} (${position.symbol}): ${err}`);
           } else {
             closedTransactions.push(tx);
             closedResponses.push(apiResponse);
-            console.log(`✅ Position closed in market ${position.market_id}: ${isLong ? 'Long' : 'Short'} ${positionSize} units`);
           }
         } catch (positionError) {
           errors.push(`Error closing position in market ${position.market_id}: ${positionError instanceof Error ? positionError.message : 'Unknown error'}`);
@@ -783,7 +873,6 @@ export class SignerClient {
       return [closedTransactions, closedResponses, errors];
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-      console.error('Error closing all positions:', errorMessage);
       return [[], [], [errorMessage]];
     }
   }
@@ -801,6 +890,8 @@ export class SignerClient {
     reduceOnly: boolean = false,
     nonce: number = -1
   ): Promise<[any, string, string | null]> {
+    // Python SDK uses DEFAULT_IOC_EXPIRY (0) for time_in_force
+    // and DEFAULT_28_DAY_ORDER_EXPIRY (-1) for order_expiry
     return await this.createOrder({
       marketIndex,
       clientOrderIndex,
@@ -808,10 +899,10 @@ export class SignerClient {
       price,
       isAsk,
       orderType: SignerClient.ORDER_TYPE_TAKE_PROFIT,
-      timeInForce: SignerClient.ORDER_TIME_IN_FORCE_IMMEDIATE_OR_CANCEL,
+      timeInForce: SignerClient.ORDER_TIME_IN_FORCE_IMMEDIATE_OR_CANCEL,  // 0
       reduceOnly,
       triggerPrice,
-      orderExpiry: SignerClient.DEFAULT_28_DAY_ORDER_EXPIRY,
+      orderExpiry: SignerClient.DEFAULT_28_DAY_ORDER_EXPIRY,  // -1 (server handles conversion)
       nonce
     });
   }
@@ -829,6 +920,8 @@ export class SignerClient {
     reduceOnly: boolean = false,
     nonce: number = -1
   ): Promise<[any, string, string | null]> {
+    // Python SDK uses DEFAULT_28_DAY_ORDER_EXPIRY (-1) for order_expiry
+    // Server converts -1 to 28-day expiry automatically
     return await this.createOrder({
       marketIndex,
       clientOrderIndex,
@@ -836,10 +929,10 @@ export class SignerClient {
       price,
       isAsk,
       orderType: SignerClient.ORDER_TYPE_TAKE_PROFIT_LIMIT,
-      timeInForce: SignerClient.ORDER_TIME_IN_FORCE_GOOD_TILL_TIME,
+      timeInForce: SignerClient.ORDER_TIME_IN_FORCE_GOOD_TILL_TIME,  // 1 (GTT)
       reduceOnly,
       triggerPrice,
-      orderExpiry: SignerClient.DEFAULT_28_DAY_ORDER_EXPIRY,
+      orderExpiry: SignerClient.DEFAULT_28_DAY_ORDER_EXPIRY,  // -1 (server handles conversion)
       nonce
     });
   }
@@ -860,6 +953,8 @@ export class SignerClient {
     // For Stop Loss orders, use trigger price as execution price if price is 0 or too low
     const executionPrice = price <= 1 ? triggerPrice : price;
     
+    // Python SDK uses DEFAULT_IOC_EXPIRY (0) for time_in_force
+    // and DEFAULT_28_DAY_ORDER_EXPIRY (-1) for order_expiry
     return await this.createOrder({
       marketIndex,
       clientOrderIndex,
@@ -867,10 +962,10 @@ export class SignerClient {
       price: executionPrice,
       isAsk,
       orderType: SignerClient.ORDER_TYPE_STOP_LOSS,
-      timeInForce: SignerClient.ORDER_TIME_IN_FORCE_IMMEDIATE_OR_CANCEL,
+      timeInForce: SignerClient.ORDER_TIME_IN_FORCE_IMMEDIATE_OR_CANCEL,  // 0
       reduceOnly,
       triggerPrice,
-      orderExpiry: SignerClient.DEFAULT_28_DAY_ORDER_EXPIRY, // Use same expiry as other orders
+      orderExpiry: SignerClient.DEFAULT_28_DAY_ORDER_EXPIRY,  // -1 (server handles conversion)
       nonce
     });
   }
@@ -888,6 +983,8 @@ export class SignerClient {
     reduceOnly: boolean = false,
     nonce: number = -1
   ): Promise<[any, string, string | null]> {
+    // Python SDK uses DEFAULT_28_DAY_ORDER_EXPIRY (-1) for order_expiry
+    // Server converts -1 to 28-day expiry automatically
     return await this.createOrder({
       marketIndex,
       clientOrderIndex,
@@ -895,10 +992,10 @@ export class SignerClient {
       price,
       isAsk,
       orderType: SignerClient.ORDER_TYPE_STOP_LOSS_LIMIT,
-      timeInForce: SignerClient.ORDER_TIME_IN_FORCE_GOOD_TILL_TIME,
+      timeInForce: SignerClient.ORDER_TIME_IN_FORCE_GOOD_TILL_TIME,  // 1 (GTT)
       reduceOnly,
       triggerPrice,
-      orderExpiry: SignerClient.DEFAULT_28_DAY_ORDER_EXPIRY,
+      orderExpiry: SignerClient.DEFAULT_28_DAY_ORDER_EXPIRY,  // -1 (server handles conversion)
       nonce
     });
   }
@@ -952,7 +1049,6 @@ export class SignerClient {
       return [JSON.parse(txInfo.txInfo), txHash.tx_hash || txHash.hash || '', null];
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-      console.error('Error transferring:', errorMessage);
       return [null, '', errorMessage];
     }
   }
@@ -988,7 +1084,6 @@ export class SignerClient {
       return [JSON.parse(txInfo.txInfo), txHash.tx_hash || txHash.hash || '', null];
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-      console.error('Error updating leverage:', errorMessage);
       return [null, '', errorMessage];
     }
   }
@@ -1025,6 +1120,41 @@ export class SignerClient {
       }
       process.stdout.write('\r' + ' '.repeat(80) + '\r'); // Clear the line
     };
+
+    // Helper to get status name from code
+    const getStatusName = (status: number | string): string => {
+      if (typeof status === 'string') return status;
+      switch (status) {
+        case SignerClient.TX_STATUS_PENDING: return 'Pending';
+        case SignerClient.TX_STATUS_QUEUED: return 'Queued';
+        case SignerClient.TX_STATUS_COMMITTED: return 'Committed';
+        case SignerClient.TX_STATUS_EXECUTED: return 'Executed';
+        case SignerClient.TX_STATUS_FAILED: return 'Failed';
+        case SignerClient.TX_STATUS_REJECTED: return 'Rejected';
+        default: return `Unknown (${status})`;
+      }
+    };
+
+    // Helper to extract error information from transaction
+    const getErrorInfo = (transaction: Transaction): string => {
+      try {
+        if (transaction.event_info) {
+          const eventInfo = JSON.parse(transaction.event_info);
+          if (eventInfo.ae) {
+            return eventInfo.ae; // ae = actual error
+          }
+        }
+        if (transaction.info) {
+          const info = JSON.parse(transaction.info);
+          if (info.Error || info.error) {
+            return info.Error || info.error;
+          }
+        }
+      } catch (e) {
+        // Failed to parse, return generic message
+      }
+      return 'No error details available';
+    };
     
     try {
       startAnimation();
@@ -1036,21 +1166,27 @@ export class SignerClient {
             value: txHash
           });
           
-          // Check if transaction is confirmed
-          if (transaction.status === 'confirmed') {
+          const status = typeof transaction.status === 'number' ? transaction.status : transaction.status;
+          const statusName = getStatusName(transaction.status);
+          
+          // Status 3 = EXECUTED (successful)
+          if (status === SignerClient.TX_STATUS_EXECUTED || transaction.status === 'confirmed') {
             stopAnimation();
-            console.log(`✅ Transaction ${txHash.substring(0, 16)} confirmed`);
             return transaction;
-          } else if (transaction.status === 'failed') {
+          } 
+          // Status 4 = FAILED, Status 5 = REJECTED
+          else if (status === SignerClient.TX_STATUS_FAILED || status === SignerClient.TX_STATUS_REJECTED || transaction.status === 'failed') {
             stopAnimation();
-            console.log(`❌ Transaction ${txHash.substring(0, 16)} failed`);
+            const errorInfo = getErrorInfo(transaction);
             throw new TransactionException(
-              `Transaction ${txHash} failed with status: ${transaction.status}`,
+              `Transaction ${txHash} ${statusName.toLowerCase()}: ${errorInfo}`,
               'waitForTransaction',
               transaction
             );
-          } else {
-            // Transaction is still processing (pending or unknown status)
+          } 
+          // Status 0,1,2 = Still processing (PENDING, QUEUED, COMMITTED)
+          else {
+            // Transaction is still processing
             await new Promise(resolve => setTimeout(resolve, pollInterval));
           }
           
@@ -1063,6 +1199,11 @@ export class SignerClient {
           )) {
             await new Promise(resolve => setTimeout(resolve, pollInterval));
             continue;
+          }
+          
+          // If it's a TransactionException, re-throw it
+          if (error instanceof TransactionException) {
+            throw error;
           }
           
           // For other errors, continue trying
@@ -1087,42 +1228,143 @@ export class SignerClient {
    * @returns Promise<boolean> - True if order is confirmed
    */
   async waitForOrderConfirmation(
-    marketIndex: number,
-    clientOrderIndex: number,
+    _marketIndex: number,
+    _clientOrderIndex: number,
     maxWaitTime: number = 30000,
     pollInterval: number = 1000
   ): Promise<boolean> {
     const startTime = Date.now();
     
-    console.log(`⏳ Waiting for order ${clientOrderIndex} in market ${marketIndex} to be confirmed...`);
-    
     while (Date.now() - startTime < maxWaitTime) {
       try {
         // This would need to be implemented based on the order API
         // For now, we'll just wait for the transaction to be confirmed
-        console.log(`⏳ Waiting for order confirmation... (${marketIndex}:${clientOrderIndex})`);
         await new Promise(resolve => setTimeout(resolve, pollInterval));
         
         // TODO: Implement actual order book checking
         // const orderBook = await this.orderApi.getOrderBooks(marketIndex);
         // const orderExists = orderBook.orders.some(order => order.client_order_index === clientOrderIndex);
         // if (orderExists) {
-        //   console.log(`✅ Order ${clientOrderIndex} confirmed in order book`);
         //   return true;
         // }
         
         // For now, just return true after a short wait to demonstrate the functionality
-        console.log(`✅ Order ${clientOrderIndex} confirmation simulated (placeholder)`);
         return true;
         
       } catch (error) {
-        console.log(`⏳ Order confirmation check failed, retrying...`);
         await new Promise(resolve => setTimeout(resolve, pollInterval));
       }
     }
     
-    console.log(`⚠️ Order ${clientOrderIndex} confirmation timeout after ${maxWaitTime}ms`);
     return false;
+  }
+
+  /**
+   * Get list of subaccounts for the current master account
+   * @returns Array of subaccount indices
+   */
+  async getSubAccounts(): Promise<number[]> {
+    try {
+      // First try: Get account by index
+      const response = await this.accountApi.getAccount({
+        by: 'index',
+        value: this.config.accountIndex.toString()
+      });
+      
+      // The response might be wrapped - extract the actual account
+      let account;
+      if ((response as any).accounts && Array.isArray((response as any).accounts)) {
+        // Response format: { accounts: [{ index: 52548, ... }] }
+        account = (response as any).accounts[0];
+      } else if ((response as any).data) {
+        account = (response as any).data;
+      } else {
+        account = response;
+      }
+      
+      // Check if the account object has a sub_accounts or related_accounts field
+      const subAccountsField = account.sub_accounts || 
+                               account.subAccounts || 
+                               account.subaccounts ||
+                               account.related_accounts ||
+                               account.sub_account_indices;
+      
+      if (subAccountsField && Array.isArray(subAccountsField) && subAccountsField.length > 0) {
+        return subAccountsField.map((sub: any) => {
+          if (typeof sub === 'object' && sub !== null) {
+            return parseInt(sub.index || sub.account_index || sub.accountIndex, 10);
+          }
+          return parseInt(sub, 10);
+        });
+      }
+      
+      // Second try: Use getAccountsByL1Address if we have the L1 address
+      if (account.l1_address) {
+        const accountsResponse = await this.accountApi.getAccountsByL1Address(account.l1_address);
+        
+        // Extract the sub_accounts array from the response
+        const accountsArray = (accountsResponse as any).sub_accounts || 
+                             (accountsResponse as any).accounts ||
+                             accountsResponse;
+        
+        if (Array.isArray(accountsArray)) {
+          // Filter by account_type: 1 = subaccount, 0 = master account
+          // Also filter out the current master account index
+          const subAccountIndices = accountsArray
+            .filter((acc: any) => 
+              (acc.account_type === 1 || acc.account_type === '1') && // Type 1 = subaccount
+              parseInt(acc.index, 10) !== this.config.accountIndex
+            )
+            .map((acc: any) => parseInt(acc.index, 10));
+          
+          if (subAccountIndices.length > 0) {
+            return subAccountIndices;
+          }
+        }
+      }
+      
+      return [];
+    } catch (error) {
+      logger.debug('Error fetching subaccounts', { 
+        error: error instanceof Error ? error.message : 'Unknown error' 
+      });
+      return [];
+    }
+  }
+
+  /**
+   * Check if a specific account index is a subaccount of the current master account
+   * @param accountIndex - Account index to check
+   * @returns True if the account is a subaccount
+   */
+  async isSubAccount(accountIndex: number): Promise<boolean> {
+    const subAccounts = await this.getSubAccounts();
+    return subAccounts.includes(accountIndex);
+  }
+
+  /**
+   * Check if the current account is a master account or subaccount
+   * Master accounts have lower indices (typically < 2^47 - 1)
+   * Subaccounts are created sequentially after their master
+   * @returns Object with isMaster flag and estimated master index
+   */
+  checkAccountType(): { isMaster: boolean; estimatedMasterIndex: number | null } {
+    const MAX_MASTER_ACCOUNT_INDEX = 140737488355327; // (1 << 47) - 1
+    const accountIndex = this.config.accountIndex;
+    
+    if (accountIndex <= MAX_MASTER_ACCOUNT_INDEX) {
+      return {
+        isMaster: true,
+        estimatedMasterIndex: null
+      };
+    }
+    
+    // For subaccounts, the master is typically the nearest lower index
+    // In Lighter, subaccounts are sequential after master
+    return {
+      isMaster: false,
+      estimatedMasterIndex: accountIndex - 1 // Simplified estimation
+    };
   }
 
   /**
