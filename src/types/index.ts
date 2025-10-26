@@ -31,7 +31,7 @@ export interface CursorParams {
 }
 
 export interface AccountParams {
-  by: 'index' | 'l1_address';
+  by: string;
   value: string;
 }
 
@@ -53,10 +53,16 @@ export interface CandlestickParams {
   count_back?: number;
 }
 
-export interface OrderBookParams {
-  market_id: number;
-  depth?: number;
+export interface OrderBookDetailsParams {
+  market_id?: number;
 }
+
+export interface OrderBookOrdersParams {
+  market_id: number;
+  limit?: number;
+}
+
+export type OrderBookParams = OrderBookOrdersParams;
 
 export interface TradeParams {
   market_id: number;

@@ -1,5 +1,12 @@
 import { ApiClient } from './api-client';
-import { OrderBookParams, TradeParams, CreateOrderParams, CancelOrderParams, PaginationParams } from '../types';
+import {
+  TradeParams,
+  CreateOrderParams,
+  CancelOrderParams,
+  PaginationParams,
+  OrderBookDetailsParams,
+  OrderBookOrdersParams,
+} from '../types';
 
 export interface OrderBook {
   market_id: number;
@@ -14,17 +21,64 @@ export interface PriceLevel {
 }
 
 export interface OrderBookDetail {
+  symbol: string;
   market_id: number;
-  depth: number;
-  bids: PriceLevel[];
-  asks: PriceLevel[];
-  last_update_id: string;
+  status: string;
+  taker_fee: string;
+  maker_fee: string;
+  liquidation_fee: string;
+  min_base_amount: string;
+  min_quote_amount: string;
+  order_quote_limit: string;
+  supported_size_decimals: number;
+  supported_price_decimals: number;
+  supported_quote_decimals: number;
+  size_decimals: number;
+  price_decimals: number;
+  quote_multiplier: number;
+  default_initial_margin_fraction: number;
+  min_initial_margin_fraction: number;
+  maintenance_margin_fraction: number;
+  closeout_margin_fraction: number;
+  last_trade_price: number;
+  daily_trades_count: number;
+  daily_base_token_volume: number;
+  daily_quote_token_volume: number;
+  daily_price_low: number;
+  daily_price_high: number;
+  daily_price_change: number;
+  open_interest: number;
+  daily_chart: any;
+  market_config: {
+    market_margin_mode: number;
+    insurance_fund_account_index: number;
+  };
 }
 
-export interface OrderBookOrders {
-  market_id: number;
-  orders: Order[];
+export interface GetOrderBookDetailsResponse {
+  code: number;
+  order_book_details: OrderBookDetail[];
 }
+
+export interface OrderBookOrder {
+  order_index: number;
+  order_id: string;
+  owner_account_index: number;
+  initial_base_amount: string;
+  remaining_base_amount: string;
+  price: string;
+  order_expiry: number;
+}
+
+export interface OrderBookOrdersResponse {
+  code?: number;
+  total_asks?: number;
+  total_bids?: number;
+  bids?: OrderBookOrder[];
+  asks?: OrderBookOrder[];
+}
+
+export type OrderBookOrders = OrderBookOrdersResponse;
 
 export interface Order {
   id: string;
@@ -69,7 +123,9 @@ export class OrderApi {
   }
 
   public async getExchangeStats(): Promise<ExchangeStats> {
-    const response = await this.client.get<ExchangeStats>('/api/v1/exchangeStats');
+    const response = await this.client.get<ExchangeStats>(
+      '/api/v1/exchangeStats'
+    );
     return response.data;
   }
 
@@ -78,19 +134,28 @@ export class OrderApi {
     return response.data;
   }
 
-  public async getOrderBookDetails(params: OrderBookParams): Promise<OrderBookDetail> {
-    const response = await this.client.get<OrderBookDetail>('/api/v1/orderBookDetails', {
-      market_id: params.market_id,
-      depth: params.depth,
-    });
+  public async getOrderBookDetails(
+    params?: OrderBookDetailsParams
+  ): Promise<GetOrderBookDetailsResponse> {
+    const response = await this.client.get<GetOrderBookDetailsResponse>(
+      '/api/v1/orderBookDetails',
+      params?.market_id !== undefined
+        ? { market_id: params.market_id }
+        : undefined
+    );
     return response.data;
   }
 
-  public async getOrderBookOrders(params: OrderBookParams): Promise<OrderBookOrders> {
-    const response = await this.client.get<OrderBookOrders>('/api/v1/orderBookOrders', {
-      market_id: params.market_id,
-      depth: params.depth,
-    });
+  public async getOrderBookOrders(
+    params: OrderBookOrdersParams
+  ): Promise<OrderBookOrdersResponse> {
+    const response = await this.client.get<OrderBookOrdersResponse>(
+      '/api/v1/orderBookOrders',
+      {
+        market_id: params.market_id,
+        ...(params.limit !== undefined ? { limit: params.limit } : {}),
+      }
+    );
     return response.data;
   }
 
@@ -102,7 +167,9 @@ export class OrderApi {
     return response.data;
   }
 
-  public async getTrades(params: TradeParams & PaginationParams): Promise<Trade[]> {
+  public async getTrades(
+    params: TradeParams & PaginationParams
+  ): Promise<Trade[]> {
     const response = await this.client.get<Trade[]>('/api/v1/trades', {
       market_id: params.market_id,
       limit: params.limit,
@@ -112,27 +179,31 @@ export class OrderApi {
     return response.data;
   }
 
-  public async getAccountActiveOrders(accountIndex: number, params?: PaginationParams): Promise<Order[]> {
-    const response = await this.client.get<Order[]>('/api/v1/accountActiveOrders', {
-      account_index: accountIndex,
-      ...params,
-    });
+  public async getAccountActiveOrders(
+    accountIndex: number,
+    params?: PaginationParams
+  ): Promise<Order[]> {
+    const response = await this.client.get<Order[]>(
+      '/api/v1/accountActiveOrders',
+      {
+        account_index: accountIndex,
+        ...params,
+      }
+    );
     return response.data;
   }
 
-  public async getAccountInactiveOrders(accountIndex: number, params?: PaginationParams): Promise<Order[]> {
-    const response = await this.client.get<Order[]>('/api/v1/accountInactiveOrders', {
-      account_index: accountIndex,
-      ...params,
-    });
-    return response.data;
-  }
-
-  public async getAccountOrders(accountIndex: number, params?: PaginationParams): Promise<Order[]> {
-    const response = await this.client.get<Order[]>('/api/v1/accountOrders', {
-      account_index: accountIndex,
-      ...params,
-    });
+  public async getAccountInactiveOrders(
+    accountIndex: number,
+    params?: PaginationParams
+  ): Promise<Order[]> {
+    const response = await this.client.get<Order[]>(
+      '/api/v1/accountInactiveOrders',
+      {
+        account_index: accountIndex,
+        ...params,
+      }
+    );
     return response.data;
   }
 
@@ -151,25 +222,35 @@ export class OrderApi {
     return response.data;
   }
 
-  public async cancelOrder(params: CancelOrderParams): Promise<{ success: boolean }> {
-    const response = await this.client.delete<{ success: boolean }>('/api/v1/orders', {
-      params: {
-        market_id: params.market_id,
-        order_id: params.order_id,
-      },
-    });
+  public async cancelOrder(
+    params: CancelOrderParams
+  ): Promise<{ success: boolean }> {
+    const response = await this.client.delete<{ success: boolean }>(
+      '/api/v1/orders',
+      {
+        params: {
+          market_id: params.market_id,
+          order_id: params.order_id,
+        },
+      }
+    );
     return response.data;
   }
 
-  public async cancelAllOrders(marketId?: number): Promise<{ success: boolean }> {
+  public async cancelAllOrders(
+    marketId?: number
+  ): Promise<{ success: boolean }> {
     const params: any = {};
     if (marketId !== undefined) {
       params.market_id = marketId;
     }
-    
-    const response = await this.client.delete<{ success: boolean }>('/api/v1/orders/all', {
-      params,
-    });
+
+    const response = await this.client.delete<{ success: boolean }>(
+      '/api/v1/orders/all',
+      {
+        params,
+      }
+    );
     return response.data;
   }
 }

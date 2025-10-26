@@ -56,8 +56,9 @@ export {
 // Types from AccountApi
 export type { 
   Account,
-  SubAccount,
   AccountPosition,
+  AccountResponse,
+  GetAccountResponse,
   AccountApiKeys,
   ApiKey,
   PublicPool,
@@ -69,7 +70,9 @@ export type {
 export type {
   OrderBook,
   OrderBookDetail,
+  GetOrderBookDetailsResponse,
   OrderBookOrders,
+  OrderBookOrdersResponse,
   Order,
   ExchangeStats,
   PriceLevel
@@ -99,6 +102,8 @@ export type {
 
 export type {
   OrderBookParams,
+  OrderBookDetailsParams,
+  OrderBookOrdersParams,
   TradeParams,
   TransactionParams,
   BlockParams,
