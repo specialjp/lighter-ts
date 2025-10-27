@@ -2,7 +2,7 @@
 
 > **⚠️ Disclaimer**: This is an **unofficial** TypeScript SDK for Lighter Protocol, built by the community. It is not officially maintained by the Lighter Protocol team.
 
-TypeScript SDK for Lighter Protocol - Trade perpetuals with unmatched efficiency and fairness.
+TypeScript SDK for Lighter Protocol - trade perpetuals with unmatched efficiency and fairness. This package is a maintained fork published as `@specialjp/lighter-sdk`, building on the excellent groundwork laid by the original [`lighter-ts`](https://github.com/bvvvp009/lighter-ts) repository. The fork’s primary goal is to tidy up TypeScript types and packaging so the SDK can be consumed more easily from modern TypeScript projects.
 
 ## Requirements
 
@@ -482,6 +482,10 @@ Check the `examples/` directory for comprehensive usage examples:
 
 **Installation**: `npm install @specialjp/lighter-sdk`
 
-**Documentation**: Complete API reference and getting started guides included
+**Documentation**: Complete API reference and getting started guides included. Content mirrors the upstream project because this fork does not change runtime behaviour.
 
-**Support**: Full feature parity with Python SDK, ready for production trading
+**Support**: Functionality is unchanged from the original SDK; this fork focuses on TypeScript type improvements and npm distribution only.
+
+## Credits
+
+- Original project: [`lighter-ts`](https://github.com/bvvvp009/lighter-ts) by the Lighter Protocol community. This fork keeps the core functionality intact while polishing documentation and distribution for npm publication.

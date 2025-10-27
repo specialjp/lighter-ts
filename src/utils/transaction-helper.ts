@@ -26,17 +26,15 @@ export async function waitAndCheckTransaction(
     silent?: boolean;
   } = {}
 ): Promise<TransactionResult> {
-  const {
-    maxWaitTime = 60000,
-    pollInterval = 2000,
-    silent = false
-  } = options;
+  const { maxWaitTime = 60000, pollInterval = 2000, silent = false } = options;
 
   const transactionApi = new TransactionApi(apiClient);
   const startTime = Date.now();
 
   // Helper to extract error from transaction
-  const extractError = (tx: Transaction): { message: string; code?: number } | null => {
+  const extractError = (
+    tx: Transaction
+  ): { message: string; code?: number } | null => {
     try {
       if (tx.event_info) {
         const eventInfo = JSON.parse(tx.event_info);
@@ -44,7 +42,7 @@ export async function waitAndCheckTransaction(
           const errorData = JSON.parse(eventInfo.ae);
           return {
             message: errorData.message || 'Unknown error',
-            code: errorData.code
+            code: errorData.code,
           };
         }
       }
@@ -55,21 +53,26 @@ export async function waitAndCheckTransaction(
   };
 
   if (!silent) {
-    process.stdout.write(`⏳ Confirming transaction ${txHash.substring(0, 16)}...`);
+    process.stdout.write(
+      `⏳ Confirming transaction ${txHash.substring(0, 16)}...`
+    );
   }
 
   while (Date.now() - startTime < maxWaitTime) {
     try {
       const tx = await transactionApi.getTransaction({
         by: 'hash',
-        value: txHash
+        value: txHash,
       });
 
-      const status = typeof tx.status === 'number' ? tx.status : parseInt(tx.status as string, 10);
+      const status =
+        typeof tx.status === 'number'
+          ? tx.status
+          : parseInt(tx.status as string, 10);
 
       // Check if there's an error regardless of status
       const errorInfo = extractError(tx);
-      
+
       // If status is 2 (COMMITTED) or 3 (EXECUTED), check for errors
       // Status 2 with no error = success (e.g., triggered orders waiting for trigger)
       // Status 3 = fully executed
@@ -80,7 +83,7 @@ export async function waitAndCheckTransaction(
         return {
           success: true,
           transaction: tx,
-          status
+          status,
         };
       }
       // Status 2/3 but WITH error = failed validation
@@ -93,7 +96,7 @@ export async function waitAndCheckTransaction(
           transaction: tx,
           error: errorInfo.message,
           ...(errorInfo.code !== undefined && { errorCode: errorInfo.code }),
-          status
+          status,
         };
       }
       // Status 4 = FAILED, Status 5 = REJECTED
@@ -107,7 +110,7 @@ export async function waitAndCheckTransaction(
           transaction: tx,
           error: errorInfo?.message || 'Transaction failed',
           ...(errorInfo?.code !== undefined && { errorCode: errorInfo.code }),
-          status
+          status,
         };
       }
       // Status 0,1,2 = Still processing (PENDING, QUEUED, COMMITTED)
@@ -116,15 +119,16 @@ export async function waitAndCheckTransaction(
       }
     } catch (error) {
       // If transaction not found yet, continue polling
-      if (error instanceof Error && (
-        error.message.includes('not found') ||
-        error.message.includes('404') ||
-        error.message.includes('No transaction found')
-      )) {
+      if (
+        error instanceof Error &&
+        (error.message.includes('not found') ||
+          error.message.includes('404') ||
+          error.message.includes('No transaction found'))
+      ) {
         await new Promise(resolve => setTimeout(resolve, pollInterval));
         continue;
       }
-      
+
       // For other errors, continue trying
       await new Promise(resolve => setTimeout(resolve, pollInterval));
     }
@@ -134,11 +138,11 @@ export async function waitAndCheckTransaction(
   if (!silent) {
     process.stdout.write('\r' + ' '.repeat(80) + '\r');
   }
-  
+
   return {
     success: false,
     error: 'Transaction confirmation timeout',
-    status: -1
+    status: -1,
   };
 }
 
@@ -176,7 +180,9 @@ export async function isTransactionSuccessful(
   apiClient: ApiClient,
   txHash: string
 ): Promise<boolean> {
-  const result = await waitAndCheckTransaction(apiClient, txHash, { silent: true });
+  const result = await waitAndCheckTransaction(apiClient, txHash, {
+    silent: true,
+  });
   return result.success;
 }
 
@@ -191,7 +197,7 @@ export async function getTransactionError(
     const transactionApi = new TransactionApi(apiClient);
     const tx = await transactionApi.getTransaction({
       by: 'hash',
-      value: txHash
+      value: txHash,
     });
 
     if (tx.event_info) {
@@ -200,14 +206,13 @@ export async function getTransactionError(
         const errorData = JSON.parse(eventInfo.ae);
         return {
           message: errorData.message || 'Unknown error',
-          code: errorData.code
+          code: errorData.code,
         };
       }
     }
   } catch (e) {
     return { message: 'Could not fetch transaction' };
   }
-  
+
   return null;
 }
-

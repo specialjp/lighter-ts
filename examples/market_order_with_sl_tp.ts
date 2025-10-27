@@ -7,23 +7,24 @@ dotenv.config();
 
 /**
  * Market Order with Stop Loss and Take Profit
- * 
+ *
  * This example demonstrates how to:
  * 1. Execute a market order to open a position
  * 2. Immediately place Stop Loss (SL) order for protection
  * 3. Immediately place Take Profit (TP) order to lock in gains
- * 
+ *
  * SL and TP are placed as separate orders AFTER the market order executes.
  * They automatically close your position when triggered.
- * 
+ *
  * Prerequisites:
  * - API_PRIVATE_KEY in .env
  * - API_KEY_INDEX in .env
- * - ACCOUNT_INDEX in .env  
+ * - ACCOUNT_INDEX in .env
  * - BASE_URL in .env
  */
 
-const BASE_URL = process.env['BASE_URL'] || 'https://testnet.zklighter.elliot.ai';
+const BASE_URL =
+  process.env['BASE_URL'] || 'https://testnet.zklighter.elliot.ai';
 const API_KEY_PRIVATE_KEY = process.env['API_PRIVATE_KEY'];
 const ACCOUNT_INDEX = parseInt(process.env['ACCOUNT_INDEX'] || '0', 10);
 const API_KEY_INDEX = parseInt(process.env['API_KEY_INDEX'] || '0', 10);
@@ -37,14 +38,19 @@ interface MarketOrderWithSlTpConfig {
   leverage: number; // Leverage multiplier (e.g., 5 for 5x)
 }
 
-async function getCurrentMarketPrice(apiClient: ApiClient, marketIndex: number): Promise<number> {
+async function getCurrentMarketPrice(
+  apiClient: ApiClient,
+  marketIndex: number
+): Promise<number> {
   try {
     const orderApi = new OrderApi(apiClient);
-    const details = await orderApi.getOrderBookDetails({ market_id: marketIndex, depth: 1 }) as any;
-    
+    const details = await orderApi.getOrderBookDetails({
+      market_id: marketIndex,
+    });
+
     if (details.order_book_details && details.order_book_details.length > 0) {
       const marketInfo = details.order_book_details[0];
-      return parseFloat(marketInfo.last_trade_price);
+      return marketInfo.last_trade_price;
     }
   } catch (error) {
     console.error('Error fetching market price:', error);
@@ -58,11 +64,18 @@ async function executeMarketOrderWithSlTp(
   config: MarketOrderWithSlTpConfig
 ): Promise<void> {
   console.log('\n🎯 Market Order with SL/TP Protection');
-  console.log(`   Direction: ${config.isAsk ? 'SHORT' : 'LONG'} | Size: ${config.baseAmount} | SL: ${config.stopLossPercent}% | TP: ${config.takeProfitPercent}%\n`);
+  console.log(
+    `   Direction: ${config.isAsk ? 'SHORT' : 'LONG'} | Size: ${
+      config.baseAmount
+    } | SL: ${config.stopLossPercent}% | TP: ${config.takeProfitPercent}%\n`
+  );
 
   // Get current market price
-  const currentPrice = await getCurrentMarketPrice(apiClient, config.marketIndex);
-  
+  const currentPrice = await getCurrentMarketPrice(
+    apiClient,
+    config.marketIndex
+  );
+
   if (currentPrice === 0) {
     console.error('❌ Could not fetch market price');
     return;
@@ -71,12 +84,15 @@ async function executeMarketOrderWithSlTp(
   const priceDecimals = 2;
   const priceMultiplier = Math.pow(10, priceDecimals);
   const priceInUnits = Math.round(currentPrice * priceMultiplier);
-  
+
   console.log(`Current price: $${currentPrice.toFixed(6)}`);
 
   // Execute market order
   const slippageMultiplier = config.isAsk ? 0.95 : 1.05;
-  const avgExecutionPrice = Math.max(1, Math.round(priceInUnits * slippageMultiplier));
+  const avgExecutionPrice = Math.max(
+    1,
+    Math.round(priceInUnits * slippageMultiplier)
+  );
   const clientOrderIndex = Date.now();
 
   const [, marketTxHash, marketErr] = await client.createMarketOrder({
@@ -85,7 +101,7 @@ async function executeMarketOrderWithSlTp(
     baseAmount: config.baseAmount,
     avgExecutionPrice,
     isAsk: config.isAsk,
-    reduceOnly: false
+    reduceOnly: false,
   });
 
   if (marketErr) {
@@ -100,7 +116,7 @@ async function executeMarketOrderWithSlTp(
     const result = await waitAndCheckTransaction(apiClient, marketTxHash, {
       maxWaitTime: 30000,
       pollInterval: 2000,
-      silent: true
+      silent: true,
     });
 
     if (!result.success) {
@@ -115,7 +131,7 @@ async function executeMarketOrderWithSlTp(
   // Calculate SL/TP prices
   const priceMovementSL = config.stopLossPercent / config.leverage;
   const priceMovementTP = config.takeProfitPercent / config.leverage;
-  
+
   const slPrice = config.isAsk
     ? Math.round(priceInUnits * (1 + priceMovementSL / 100))
     : Math.round(priceInUnits * (1 - priceMovementSL / 100));
@@ -124,7 +140,11 @@ async function executeMarketOrderWithSlTp(
     ? Math.round(priceInUnits * (1 - priceMovementTP / 100))
     : Math.round(priceInUnits * (1 + priceMovementTP / 100));
 
-  console.log(`SL: $${(slPrice / priceMultiplier).toFixed(6)} | TP: $${(tpPrice / priceMultiplier).toFixed(6)}`);
+  console.log(
+    `SL: $${(slPrice / priceMultiplier).toFixed(6)} | TP: $${(
+      tpPrice / priceMultiplier
+    ).toFixed(6)}`
+  );
 
   // Place Stop Loss order
   const slClientOrderIndex = Date.now() + 1000;
@@ -166,8 +186,12 @@ async function executeMarketOrderWithSlTp(
 
   // Summary
   console.log('\n📊 Result:');
-  console.log(`   Market: ${marketErr ? '❌' : '✅'} | SL: ${slErr ? '❌' : '✅'} | TP: ${tpErr ? '❌' : '✅'}`);
-  
+  console.log(
+    `   Market: ${marketErr ? '❌' : '✅'} | SL: ${slErr ? '❌' : '✅'} | TP: ${
+      tpErr ? '❌' : '✅'
+    }`
+  );
+
   if (!marketErr && !slErr && !tpErr) {
     console.log('   🎉 Position fully protected with SL & TP!');
   }
@@ -183,7 +207,7 @@ async function main() {
     url: BASE_URL,
     privateKey: API_KEY_PRIVATE_KEY,
     accountIndex: ACCOUNT_INDEX,
-    apiKeyIndex: API_KEY_INDEX
+    apiKeyIndex: API_KEY_INDEX,
   });
 
   const apiClient = new ApiClient({ host: BASE_URL });
@@ -199,17 +223,18 @@ async function main() {
       isAsk: false, // false = LONG (buy), true = SHORT (sell)
       stopLossPercent: 5, // 5% position loss
       takeProfitPercent: 5, // 5% position gain
-      leverage: 5 // 5x leverage
+      leverage: 5, // 5x leverage
     });
 
     await client.close();
     await apiClient.close();
-
   } catch (error) {
-    console.error('\n❌ Error:', error instanceof Error ? error.message : 'Unknown error');
+    console.error(
+      '\n❌ Error:',
+      error instanceof Error ? error.message : 'Unknown error'
+    );
     process.exit(1);
   }
 }
 
 main().catch(console.error);
-
