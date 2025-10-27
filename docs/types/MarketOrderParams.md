@@ -15,7 +15,7 @@ Parameters for creating a market order using the `SignerClient.createMarketOrder
 ## Example
 
 ```typescript
-import { SignerClient } from 'lighter-ts-sdk';
+import { SignerClient } from '@specialjp/lighter-sdk';
 
 const marketOrderParams: MarketOrderParams = {
   marketIndex: 0, // ETH/USDC

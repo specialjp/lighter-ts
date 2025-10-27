@@ -12,7 +12,7 @@ Configuration object for the WASM signer client.
 ## Example
 
 ```typescript
-import { WasmSignerClient } from 'lighter-ts-sdk';
+import { WasmSignerClient } from '@specialjp/lighter-sdk';
 
 const config: WasmSignerConfig = {
   wasmPath: 'wasm/lighter-signer.wasm',

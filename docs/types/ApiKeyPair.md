@@ -12,7 +12,7 @@ Structure representing a generated API key pair.
 ## Example
 
 ```typescript
-import { SignerClient } from 'lighter-ts-sdk';
+import { SignerClient } from '@specialjp/lighter-sdk';
 
 const client = new SignerClient(config);
 await client.initialize();

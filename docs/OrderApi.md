@@ -157,7 +157,7 @@ try {
 ## Complete Example
 
 ```typescript
-import { ApiClient, OrderApi } from 'lighter-ts-sdk';
+import { ApiClient, OrderApi } from '@specialjp/lighter-sdk';
 
 async function main() {
   const client = new ApiClient({ host: 'https://mainnet.zklighter.elliot.ai' });
