@@ -56,6 +56,7 @@ export {
 // Types from AccountApi
 export type { 
   Account,
+  SubAccount,
   AccountPosition,
   AccountApiKeys,
   ApiKey,
@@ -114,6 +115,15 @@ export { Config } from './utils/configuration';
 export { createApiKey, generateRandomSeed } from './utils/api-key-utils';
 export type { ApiKeyPair } from './utils/api-key-utils';
 
+// Transaction Utilities
+export { 
+  waitAndCheckTransaction, 
+  printTransactionResult, 
+  isTransactionSuccessful, 
+  getTransactionError 
+} from './utils/transaction-helper';
+export type { TransactionResult } from './utils/transaction-helper';
+
 // Constants
 export const LIGHTER_CONSTANTS = {
   // Order Types
@@ -147,7 +157,15 @@ export const LIGHTER_CONSTANTS = {
   DEFAULT_IOC_EXPIRY: 0,
   DEFAULT_10_MIN_AUTH_EXPIRY: -1,
   MINUTE: 60,
-  USDC_TICKER_SCALE: 1e6
+  USDC_TICKER_SCALE: 1e6,
+  
+  // Transaction Status Codes
+  TX_STATUS_PENDING: 0,
+  TX_STATUS_QUEUED: 1,
+  TX_STATUS_COMMITTED: 2,
+  TX_STATUS_EXECUTED: 3,
+  TX_STATUS_FAILED: 4,
+  TX_STATUS_REJECTED: 5
 } as const;
 
 // Default Configuration

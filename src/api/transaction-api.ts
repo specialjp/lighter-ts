@@ -7,11 +7,22 @@ export interface Transaction {
   sequence_index: number;
   account_index: number;
   nonce: number;
-  type: string;
-  data: any;
-  status: 'pending' | 'confirmed' | 'failed';
-  created_at: string;
-  updated_at: string;
+  type: string | number;
+  info?: string; // JSON string containing transaction info
+  event_info?: string; // JSON string containing event information
+  data?: any;
+  status: number | 'pending' | 'confirmed' | 'failed'; // Numeric status code or string
+  transaction_index?: number;
+  l1_address?: string;
+  expire_at?: number;
+  queued_at?: number;
+  committed_at?: number;
+  verified_at?: number;
+  executed_at?: number;
+  parent_hash?: string;
+  created_at?: string;
+  updated_at?: string;
+  code?: number; // API response code
 }
 
 export interface Block {
@@ -38,7 +49,11 @@ export interface TxHash {
 }
 
 export interface TxHashes {
-  hashes: string[];
+  hashes?: string[];
+  tx_hash?: string[]; // API returns tx_hash (with underscore)
+  code?: number;
+  message?: string;
+  predicted_execution_time_ms?: number;
 }
 
 export class TransactionApi {
@@ -170,12 +185,28 @@ export class TransactionApi {
   }
 
   public async sendTransactionBatch(params: SendTransactionBatchParams): Promise<TxHashes> {
-    const response = await this.client.post<TxHashes>('/api/v1/sendTxBatch', {
-      account_index: params.account_index,
-      api_key_index: params.api_key_index,
-      transactions: params.transactions,
-    });
-    return response.data;
+    // Use x-www-form-urlencoded to match Python SDK behavior
+    if (params.tx_types && params.tx_infos) {
+      // Python SDK style: tx_types and tx_infos as JSON strings
+      const urlParams = new URLSearchParams();
+      urlParams.append('tx_types', params.tx_types);
+      urlParams.append('tx_infos', params.tx_infos);
+      
+      const response = await this.client.post<TxHashes>('/api/v1/sendTxBatch', urlParams, {
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      });
+      return response.data;
+    } else if (params.transactions) {
+      // TypeScript style: transactions array (JSON)
+      const response = await this.client.post<TxHashes>('/api/v1/sendTxBatch', {
+        account_index: params.account_index,
+        api_key_index: params.api_key_index,
+        transactions: params.transactions,
+      });
+      return response.data;
+    }
+    
+    throw new Error('Invalid batch params: must provide either (tx_types, tx_infos) or (transactions)');
   }
 
   public async getTransactionFromL1TxHash(l1TxHash: string): Promise<Transaction> {
