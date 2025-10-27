@@ -12,12 +12,13 @@ new WsClient(config: WsConfig)
 
 | Property | Type | Required | Description |
 |----------|------|----------|-------------|
-| `url` | `string` | Yes | WebSocket URL (e.g., `wss://mainnet.zklighter.elliot.ai/ws`) |
-| `accountIndex` | `number` | Yes | Your account index |
-| `apiKeyIndex` | `number` | Yes | Your API key index |
-| `privateKey` | `string` | Yes | Your API key private key |
+| `url` | `string` | Yes | WebSocket URL (e.g., `wss://mainnet.zklighter.elliot.ai/stream`) |
 | `reconnectInterval` | `number` | No | Reconnection interval in ms (default: 5000) |
 | `maxReconnectAttempts` | `number` | No | Maximum reconnection attempts (default: 10) |
+| `onOpen` | `() => void` | No | Callback invoked on connection open |
+| `onClose` | `() => void` | No | Callback invoked when the socket closes |
+| `onError` | `(error: Error) => void` | No | Callback invoked on socket errors |
+| `onMessage` | `(message: any) => void` | No | Receives every raw message before typed handlers run |
 
 ## Methods
 
@@ -37,73 +38,60 @@ Closes the WebSocket connection.
 await wsClient.disconnect();
 ```
 
-### subscribeOrderBook(marketIndex: number, callback: (data: OrderBookData) => void)
+### subscribeOrderBook(marketIndex: number, callback: (data: WsOrderBookUpdate) => void)
 
 Subscribes to order book updates for a specific market.
 
 **Parameters:**
 - `marketIndex: number` - Market index (0 for ETH/USDC)
-- `callback: (data: OrderBookData) => void` - Callback function for order book updates
+- `callback: (data: WsOrderBookUpdate) => void` - Callback function invoked with the raw order book update
 
 **Example:**
 ```typescript
-wsClient.subscribeOrderBook(0, (data) => {
-  console.log('ETH/USDC Order Book Update:', data);
-  console.log('Best Bid:', data.bestBid);
-  console.log('Best Ask:', data.bestAsk);
+wsClient.subscribeOrderBook(0, (update) => {
+  console.log('ETH/USDC order book offset:', update.order_book.offset);
+  console.log('Top ask:', update.order_book.asks[0]);
+  console.log('Top bid:', update.order_book.bids[0]);
 });
 ```
 
-### subscribeAccount(callback: (data: AccountData) => void)
+### subscribeAccountAll(accountId: number, callback: (data: WsAccountAllUpdate) => void)
 
-Subscribes to account updates.
+Subscribes to account-wide updates for all markets.
 
 **Parameters:**
-- `callback: (data: AccountData) => void` - Callback function for account updates
+- `accountId: number` - Account index
+- `callback: (data: WsAccountAllUpdate) => void` - Callback function for account updates
 
 **Example:**
 ```typescript
-wsClient.subscribeAccount((data) => {
-  console.log('Account Update:', data);
-  console.log('Balance:', data.balance);
-  console.log('Positions:', data.positions);
+wsClient.subscribeAccountAll(10, (update) => {
+  console.log('Account total volume:', update.total_volume);
+  console.log('Positions by market:', Object.keys(update.positions));
 });
 ```
 
-### subscribeTrades(marketIndex: number, callback: (data: TradeData) => void)
+### subscribeTrades(marketIndex: number, callback: (data: WsTradeUpdate) => void)
 
 Subscribes to trade updates for a specific market.
 
 **Parameters:**
 - `marketIndex: number` - Market index
-- `callback: (data: TradeData) => void` - Callback function for trade updates
+- `callback: (data: WsTradeUpdate) => void` - Callback function for trade updates
 
 **Example:**
 ```typescript
-wsClient.subscribeTrades(0, (data) => {
-  console.log('New Trade:', data);
-  console.log('Price:', data.price);
-  console.log('Size:', data.size);
+wsClient.subscribeTrades(0, (update) => {
+  console.log('Trades:', update.trades);
 });
 ```
 
-### sendTransaction(txType: number, txInfo: string)
+### send(message: any)
 
-Sends a transaction through the WebSocket connection.
+Sends a raw JSON-serialisable payload over the socket. This is rarely needed when using the typed helpers, but it remains available for custom channels.
 
-**Parameters:**
-- `txType: number` - Transaction type (use `SignerClient.TX_TYPE_*` constants)
-- `txInfo: string` - Transaction information as JSON string
-
-**Returns:** `Promise<string>` - Transaction hash
-
-**Example:**
 ```typescript
-const txHash = await wsClient.sendTransaction(
-  SignerClient.TX_TYPE_CREATE_ORDER,
-  JSON.stringify(orderData)
-);
-console.log('Transaction sent:', txHash);
+wsClient.send({ type: 'PING', timestamp: Date.now() });
 ```
 
 ## Event Handling
@@ -130,64 +118,16 @@ wsClient.on('reconnecting', (attempt) => {
 
 ## Types
 
-### OrderBookData
-
-```typescript
-interface OrderBookData {
-  marketIndex: number;
-  bids: PriceLevel[];
-  asks: PriceLevel[];
-  bestBid: string;
-  bestAsk: string;
-  timestamp: number;
-}
-```
-
-### AccountData
-
-```typescript
-interface AccountData {
-  accountIndex: number;
-  balance: string;
-  positions: AccountPosition[];
-  orders: Order[];
-  timestamp: number;
-}
-```
-
-### TradeData
-
-```typescript
-interface TradeData {
-  tradeId: string;
-  marketIndex: number;
-  price: string;
-  size: string;
-  side: 'buy' | 'sell';
-  timestamp: number;
-}
-```
-
-### PriceLevel
-
-```typescript
-interface PriceLevel {
-  price: string;
-  size: string;
-}
-```
+See `Ws*` typings exported from the SDK for detailed shapes.
 
 ## Complete Example
 
 ```typescript
-import { WsClient, SignerClient } from '@specialjp/lighter-sdk';
+import { WsClient } from '@specialjp/lighter-sdk';
 
 async function main() {
   const wsClient = new WsClient({
-    url: 'wss://mainnet.zklighter.elliot.ai/ws',
-    accountIndex: 123,
-    apiKeyIndex: 0,
-    privateKey: 'your-api-key-private-key',
+    url: 'wss://mainnet.zklighter.elliot.ai/stream',
     reconnectInterval: 5000,
     maxReconnectAttempts: 10
   });
@@ -210,25 +150,21 @@ async function main() {
     await wsClient.connect();
 
     // Subscribe to order book updates
-    wsClient.subscribeOrderBook(0, (data) => {
-      console.log('ETH/USDC Order Book:');
-      console.log(`Best Bid: ${data.bestBid}`);
-      console.log(`Best Ask: ${data.bestAsk}`);
-      console.log(`Bid Depth: ${data.bids.length} levels`);
-      console.log(`Ask Depth: ${data.asks.length} levels`);
+    wsClient.subscribeOrderBook(0, (update) => {
+      console.log('ETH/USDC Order Book offset:', update.order_book.offset);
+      console.log('Top ask:', update.order_book.asks[0]);
+      console.log('Top bid:', update.order_book.bids[0]);
     });
 
-    // Subscribe to account updates
-    wsClient.subscribeAccount((data) => {
-      console.log('Account Update:');
-      console.log(`Balance: ${data.balance} USDC`);
-      console.log(`Positions: ${data.positions.length}`);
-      console.log(`Open Orders: ${data.orders.length}`);
+    // Subscribe to market stats
+    wsClient.subscribeMarketStats(0, (update) => {
+      console.log('Market stats index price:', update.market_stats.index_price);
     });
 
     // Subscribe to trade updates
-    wsClient.subscribeTrades(0, (data) => {
-      console.log(`New Trade: ${data.size} @ ${data.price} (${data.side})`);
+    wsClient.subscribeTrades(0, (update) => {
+      const latest = update.trades[0];
+      console.log('Latest trade:', latest);
     });
 
     // Keep the connection alive

@@ -5,26 +5,14 @@ dotenv.config();
 
 const BASE_URL = process.env['BASE_URL'] || 'https://mainnet.zklighter.elliot.ai';
 
-// Unused functions - keeping for reference
-// function onOrderBookUpdate(marketId: number, orderBook: any): void {
-//   console.log(`Order book ${marketId}:`, JSON.stringify(orderBook, null, 2));
-// }
-
-// function onAccountUpdate(accountId: number, account: any): void {
-//   console.log(`Account ${accountId}:`, JSON.stringify(account, null, 2));
-// }
-
 async function main() {
-  const wsUrl = BASE_URL.replace('https://', 'wss://').replace('http://', 'ws://');
+  const wsUrlBase = BASE_URL.replace('https://', 'wss://').replace('http://', 'ws://').replace(/\/$/, '');
+  const wsUrl = `${wsUrlBase}/stream`;
   console.log(`Connecting to WebSocket: ${wsUrl}`);
   
   const client = new WsClient({
     url: wsUrl,
     onOpen: () => console.log('WebSocket connected'),
-    onMessage: (message) => {
-      console.log('Received message:', message);
-      // Handle different message types here
-    },
     onClose: () => console.log('WebSocket closed'),
     onError: (error) => console.error('WebSocket error:', error)
   });
@@ -32,12 +20,17 @@ async function main() {
   await client.connect();
   
   // Subscribe to order book updates
-  client.subscribe({ channel: 'orderbook', params: { market_id: 0 } });
-  client.subscribe({ channel: 'orderbook', params: { market_id: 1 } });
+  client.subscribeOrderBook(0, (update) => {
+    console.log('Order book[0] offset:', update.order_book.offset);
+  });
+  client.subscribeOrderBook(1, (update) => {
+    console.log('Order book[1] top bid:', update.order_book.bids[0]);
+  });
   
-  // Subscribe to account updates
-  client.subscribe({ channel: 'account', params: { account_index: 1 } });
-  client.subscribe({ channel: 'account', params: { account_index: 2 } });
+  // Subscribe to market stats
+  client.subscribeMarketStats(0, (update) => {
+    console.log('Market stats[0] index price:', update.market_stats.index_price);
+  });
 }
 
 main().catch(console.error);

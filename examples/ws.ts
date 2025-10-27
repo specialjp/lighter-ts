@@ -5,10 +5,6 @@ dotenv.config();
 
 const BASE_URL = process.env['BASE_URL'] || 'https://mainnet.zklighter.elliot.ai';
 
-function onMessage(data: any): void {
-  console.log('WebSocket message received:', JSON.stringify(data, null, 2));
-}
-
 function onError(error: Error): void {
   console.error('WebSocket error:', error);
 }
@@ -22,12 +18,12 @@ function onClose(): void {
 }
 
 async function main(): Promise<void> {
-  const wsUrl = BASE_URL.replace('https://', 'wss://').replace('http://', 'ws://');
+  const wsUrlBase = BASE_URL.replace('https://', 'wss://').replace('http://', 'ws://').replace(/\/$/, '');
+  const wsUrl = `${wsUrlBase}/stream`;
   console.log(`Connecting to WebSocket: ${wsUrl}`);
   
   const client = new WsClient({
     url: wsUrl,
-    onMessage,
     onError,
     onOpen,
     onClose,
@@ -37,15 +33,13 @@ async function main(): Promise<void> {
     await client.connect();
     
     // Subscribe to order book updates for market 0
-    client.subscribe({
-      channel: 'orderbook',
-      params: { marketIndex: 0 }
+    client.subscribeOrderBook(0, (update) => {
+      console.log('Market 0 best bid:', update.order_book.bids[0]);
     });
 
-    // Subscribe to account updates for account 1
-    client.subscribe({
-      channel: 'account',
-      params: { accountIndex: 1 }
+    // Subscribe to market stats for market 0
+    client.subscribeMarketStats(0, (update) => {
+      console.log('Market 0 index price:', update.market_stats.index_price);
     });
 
     // Keep the connection alive

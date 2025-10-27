@@ -284,9 +284,8 @@ import { WsClient } from '@specialjp/lighter-sdk';
 
 async function connectWebSocket() {
   const wsClient = new WsClient({
-    url: 'wss://mainnet.zklighter.elliot.ai/ws',
+    url: 'wss://mainnet.zklighter.elliot.ai/stream',
     onOpen: () => console.log('WebSocket connected'),
-    onMessage: (message) => console.log('Received:', message),
     onClose: () => console.log('WebSocket closed'),
     onError: (error) => console.error('WebSocket error:', error)
   });
@@ -294,10 +293,24 @@ async function connectWebSocket() {
   await wsClient.connect();
   
   // Subscribe to order book updates
-  wsClient.subscribe('orderbook', { market_id: 0 });
+  wsClient.subscribeOrderBook(0, (update) => {
+    console.log('Order book:', update.order_book);
+  });
   
-  // Subscribe to account updates
-  wsClient.subscribe('account', { account_index: 123 });
+  // Subscribe to market stats updates
+  wsClient.subscribeMarketStats(0, (update) => {
+    console.log('Market stats:', update.market_stats);
+  });
+  
+  // Subscribe to trades
+  wsClient.subscribeTrades(0, (update) => {
+    console.log('Trades:', update.trades);
+  });
+
+  // ...later, when done listening
+  setTimeout(async () => {
+    await wsClient.disconnect();
+  }, 30_000);
 }
 
 connectWebSocket().catch(console.error);
