@@ -13,13 +13,13 @@ This guide will help you get up and running with the Lighter TypeScript SDK quic
 ### Using npm
 
 ```bash
-npm install lighter-ts-sdk
+npm install @specialjp/lighter-sdk
 ```
 
 ### Using yarn
 
 ```bash
-yarn add lighter-ts-sdk
+yarn add @specialjp/lighter-sdk
 ```
 
 ## Quick Start
@@ -27,7 +27,7 @@ yarn add lighter-ts-sdk
 ### 1. Basic API Usage
 
 ```typescript
-import { ApiClient, AccountApi } from 'lighter-ts-sdk';
+import { ApiClient, AccountApi } from '@specialjp/lighter-sdk';
 
 async function main() {
   const client = new ApiClient({ host: 'https://mainnet.zklighter.elliot.ai' });
@@ -49,7 +49,7 @@ main().catch(console.error);
 ### 2. Trading with Standalone WASM Signer
 
 ```typescript
-import { SignerClient } from 'lighter-ts-sdk';
+import { SignerClient } from '@specialjp/lighter-sdk';
 
 async function main() {
   const client = new SignerClient({
@@ -125,7 +125,7 @@ API_KEY_INDEX=1
 Now you can use the SDK to create orders:
 
 ```typescript
-import { SignerClient } from 'lighter-ts-sdk';
+import { SignerClient } from '@specialjp/lighter-sdk';
 import * as dotenv from 'dotenv';
 
 dotenv.config();
@@ -204,7 +204,7 @@ npx ts-node examples/[example-name].ts
 For real-time data, use the WebSocket client:
 
 ```typescript
-import { WsClient } from 'lighter-ts-sdk';
+import { WsClient } from '@specialjp/lighter-sdk';
 
 const wsClient = new WsClient({
   url: 'wss://mainnet.zklighter.elliot.ai/ws',

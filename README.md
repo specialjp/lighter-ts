@@ -14,19 +14,19 @@ TypeScript SDK for Lighter Protocol - Trade perpetuals with unmatched efficiency
 ### npm install
 
 ```sh
-npm install lighter-ts-sdk
+npm install @specialjp/lighter-sdk
 ```
 
 ### yarn install
 
 ```sh
-yarn add lighter-ts-sdk
+yarn add @specialjp/lighter-sdk
 ```
 
 Then import the package:
 
 ```typescript
-import { SignerClient, ApiClient } from 'lighter-ts-sdk';
+import { SignerClient, ApiClient } from '@specialjp/lighter-sdk';
 ```
 
 ## Quick Start Examples
@@ -34,7 +34,7 @@ import { SignerClient, ApiClient } from 'lighter-ts-sdk';
 ### 1. Basic API Usage
 
 ```typescript
-import { ApiClient, AccountApi } from 'lighter-ts-sdk';
+import { ApiClient, AccountApi } from '@specialjp/lighter-sdk';
 
 async function getAccountInfo() {
   const client = new ApiClient({ host: 'https://mainnet.zklighter.elliot.ai' });
@@ -50,7 +50,7 @@ getAccountInfo().catch(console.error);
 ### 2. Create Market Order (Standalone WASM Signer)
 
 ```typescript
-import { SignerClient } from 'lighter-ts-sdk';
+import { SignerClient } from '@specialjp/lighter-sdk';
 
 async function createMarketOrder() {
   const client = new SignerClient({
@@ -85,7 +85,7 @@ createMarketOrder().catch(console.error);
 ### 3. Create Limit Order
 
 ```typescript
-import { SignerClient } from 'lighter-ts-sdk';
+import { SignerClient } from '@specialjp/lighter-sdk';
 
 async function createLimitOrder() {
   const client = new SignerClient({
@@ -120,7 +120,7 @@ createLimitOrder().catch(console.error);
 ### 4. Cancel Order
 
 ```typescript
-import { SignerClient } from 'lighter-ts-sdk';
+import { SignerClient } from '@specialjp/lighter-sdk';
 
 async function cancelOrder() {
   const client = new SignerClient({
@@ -151,7 +151,7 @@ cancelOrder().catch(console.error);
 ### 5. Transfer USDC
 
 ```typescript
-import { SignerClient } from 'lighter-ts-sdk';
+import { SignerClient } from '@specialjp/lighter-sdk';
 
 async function transferUSDC() {
   const client = new SignerClient({
@@ -182,7 +182,7 @@ transferUSDC().catch(console.error);
 ### 6. Update Leverage
 
 ```typescript
-import { SignerClient } from 'lighter-ts-sdk';
+import { SignerClient } from '@specialjp/lighter-sdk';
 
 async function updateLeverage() {
   const client = new SignerClient({
@@ -214,7 +214,7 @@ updateLeverage().catch(console.error);
 ### 7. Cancel All Orders
 
 ```typescript
-import { SignerClient } from 'lighter-ts-sdk';
+import { SignerClient } from '@specialjp/lighter-sdk';
 
 async function cancelAllOrders() {
   const client = new SignerClient({
@@ -245,7 +245,7 @@ cancelAllOrders().catch(console.error);
 ### 8. Get Referral Points with Auth Token
 
 ```typescript
-import { SignerClient, ApiClient } from 'lighter-ts-sdk';
+import { SignerClient, ApiClient } from '@specialjp/lighter-sdk';
 
 async function getReferralPoints() {
   const signerClient = new SignerClient({
@@ -280,7 +280,7 @@ getReferralPoints().catch(console.error);
 ### 9. WebSocket Real-time Data
 
 ```typescript
-import { WsClient } from 'lighter-ts-sdk';
+import { WsClient } from '@specialjp/lighter-sdk';
 
 async function connectWebSocket() {
   const wsClient = new WsClient({
@@ -480,7 +480,7 @@ Check the `examples/` directory for comprehensive usage examples:
 - Comprehensive documentation and examples
 - TypeScript support with full type definitions
 
-**Installation**: `npm install lighter-ts-sdk`
+**Installation**: `npm install @specialjp/lighter-sdk`
 
 **Documentation**: Complete API reference and getting started guides included
 
