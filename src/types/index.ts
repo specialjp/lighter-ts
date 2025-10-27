@@ -112,6 +112,7 @@ export interface WebSocketConfig {
 
 export interface WebSocketSubscription {
   channel: string;
+  auth?: string;
   params?: Record<string, any>;
 }
 

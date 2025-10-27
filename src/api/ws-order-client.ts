@@ -40,18 +40,19 @@ export interface LighterWsTransaction {
 
 export interface WsOrderRequest {
   id: string;
-  type: 'SEND_TX' | 'SEND_BATCH_TX';
-  data: LighterWsSendTx | LighterWsSendBatchTx;
+  payload: LighterWsSendTx | LighterWsSendBatchTx;
   timestamp: number;
 }
 
 export interface WsOrderResponse {
   id?: string;
-  success: boolean;
+  success?: boolean;
   result?: LighterWsTransaction | LighterWsTransaction[];
+  transaction?: LighterWsTransaction;
   error?: string;
-  timestamp: number;
+  timestamp?: number;
   type?: string;
+  data?: any;
 }
 
 export interface WsConnectionConfig {
@@ -138,25 +139,54 @@ export class WebSocketOrderClient extends EventEmitter {
   private handleMessage(data: WebSocket.Data): void {
     try {
       const response: WsOrderResponse = JSON.parse(data.toString());
-      
+
+      const responseType = typeof response.type === 'string' ? response.type.toUpperCase() : undefined;
+
       // Handle heartbeat response
-      if (response.type === 'PONG') {
+      if (responseType === 'PONG') {
         return;
       }
 
-      // Handle order response
-      if (response.id) {
-        const pending = this.pendingRequests.get(response.id);
-        if (pending) {
-          clearTimeout(pending.timeout);
-          this.pendingRequests.delete(response.id);
+      const dataPayload = typeof response.data === 'object' && response.data !== null ? response.data : undefined;
+      const responseId = response.id ?? (dataPayload && typeof dataPayload.id === 'string' ? dataPayload.id : undefined);
 
-          if (response.success) {
-            pending.resolve(response.result);
-          } else {
-            pending.reject(new Error(response.error || 'Unknown error'));
-          }
+      if (responseId) {
+        const pending = this.pendingRequests.get(responseId);
+
+        if (!pending) {
+          this.emit('response', response);
+          return;
         }
+
+        clearTimeout(pending.timeout);
+        this.pendingRequests.delete(responseId);
+
+        const errorMessage = response.error
+          ?? (dataPayload && typeof dataPayload.error === 'string' ? dataPayload.error : undefined);
+
+        if (errorMessage) {
+          pending.reject(new Error(errorMessage));
+          return;
+        }
+
+        const successFlag = response.success
+          ?? (dataPayload && typeof dataPayload.success === 'boolean' ? dataPayload.success : undefined);
+
+        if (successFlag === false) {
+          pending.reject(new Error('WebSocket request returned unsuccessful status'));
+          return;
+        }
+
+        const result =
+          response.result ??
+          (dataPayload && dataPayload.result !== undefined ? dataPayload.result : undefined) ??
+          (dataPayload && dataPayload.transaction !== undefined ? dataPayload.transaction : undefined) ??
+          dataPayload ??
+          response;
+
+        pending.resolve(result);
+
+        return;
       } else {
         // Emit unhandled responses
         this.emit('response', response);
@@ -208,8 +238,7 @@ export class WebSocketOrderClient extends EventEmitter {
       
       const request: WsOrderRequest = {
         id: requestId,
-        type: 'SEND_TX',
-        data: {
+        payload: {
           type: 'jsonapi/sendtx',
           data: {
             tx_type: txType,
@@ -220,7 +249,7 @@ export class WebSocketOrderClient extends EventEmitter {
       };
 
       const result = await this.sendRequest(request);
-      return result as LighterWsTransaction;
+      return this.extractSingleTransaction(result);
     } finally {
       endTimer();
     }
@@ -248,8 +277,7 @@ export class WebSocketOrderClient extends EventEmitter {
       
       const request: WsOrderRequest = {
         id: requestId,
-        type: 'SEND_BATCH_TX',
-        data: {
+        payload: {
           type: 'jsonapi/sendtxbatch',
           data: {
             tx_types: txTypes,
@@ -260,7 +288,7 @@ export class WebSocketOrderClient extends EventEmitter {
       };
 
       const result = await this.sendRequest(request);
-      return result as LighterWsTransaction[];
+      return this.extractTransactionArray(result);
     } finally {
       endTimer();
     }
@@ -280,8 +308,7 @@ export class WebSocketOrderClient extends EventEmitter {
       
       const request: WsOrderRequest = {
         id: requestId,
-        type: 'SEND_BATCH_TX',
-        data: {
+        payload: {
           type: 'jsonapi/sendtxbatch',
           data: {
             tx_types: orders.map(() => 14), // TX_TYPE_CREATE_ORDER for all
@@ -298,6 +325,38 @@ export class WebSocketOrderClient extends EventEmitter {
     }
   }
 
+  private extractSingleTransaction(result: any): LighterWsTransaction {
+    if (result && typeof result === 'object') {
+      if ('transaction' in result && result.transaction) {
+        return result.transaction as LighterWsTransaction;
+      }
+
+      if ('result' in result && !Array.isArray(result.result)) {
+        return result.result as LighterWsTransaction;
+      }
+    }
+
+    return result as LighterWsTransaction;
+  }
+
+  private extractTransactionArray(result: any): LighterWsTransaction[] {
+    if (Array.isArray(result)) {
+      return result as LighterWsTransaction[];
+    }
+
+    if (result && typeof result === 'object') {
+      if (Array.isArray((result as any).transactions)) {
+        return (result as any).transactions as LighterWsTransaction[];
+      }
+
+      if (Array.isArray((result as any).result)) {
+        return (result as any).result as LighterWsTransaction[];
+      }
+    }
+
+    return result as LighterWsTransaction[];
+  }
+
   private sendRequest(request: WsOrderRequest): Promise<any> {
     return new Promise((resolve, reject) => {
       // Set up timeout
@@ -311,12 +370,23 @@ export class WebSocketOrderClient extends EventEmitter {
         resolve,
         reject,
         timeout,
-        timestamp: Date.now()
+        timestamp: request.timestamp
       });
 
       // Send request
       try {
-        this.ws!.send(JSON.stringify(request));
+        const wireMessage: any = {
+          type: request.payload.type,
+          data: {
+            ...(request.payload.data as Record<string, any>)
+          }
+        };
+
+        if (wireMessage.data && wireMessage.data.id === undefined) {
+          wireMessage.data.id = request.id;
+        }
+
+        this.ws!.send(JSON.stringify(wireMessage));
       } catch (error) {
         clearTimeout(timeout);
         this.pendingRequests.delete(request.id);

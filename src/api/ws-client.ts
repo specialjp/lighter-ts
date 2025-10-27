@@ -88,16 +88,25 @@ export class WsClient {
       throw new Error('WebSocket is not connected');
     }
 
-    const message = {
-      method: 'subscribe',
-      params: {
-        channel: subscription.channel,
-        ...subscription.params,
-      },
+    const message: any = {
+      type: 'subscribe',
+      channel: subscription.channel,
     };
 
+    if (subscription.auth) {
+      message.auth = subscription.auth;
+    }
+
+    if (subscription.params) {
+      for (const [key, value] of Object.entries(subscription.params)) {
+        if (value !== undefined) {
+          message[key] = value;
+        }
+      }
+    }
+
     this.ws.send(JSON.stringify(message));
-    this.subscriptions.set(subscription.channel, subscription);
+    this.subscriptions.set(subscription.channel, { ...subscription });
   }
 
   public unsubscribe(channel: string): void {
@@ -106,10 +115,8 @@ export class WsClient {
     }
 
     const message = {
-      method: 'unsubscribe',
-      params: {
-        channel,
-      },
+      type: 'unsubscribe',
+      channel,
     };
 
     this.ws.send(JSON.stringify(message));
