@@ -1,11 +1,9 @@
-import { ApiClient } from './api-client';
+import { ApiClient } from "./api-client";
 import {
   TradeParams,
-  CreateOrderParams,
-  PaginationParams,
   OrderBookDetailsParams,
   OrderBookOrdersParams,
-} from '../types';
+} from "../types";
 
 export interface OrderBook {
   market_id: number;
@@ -82,13 +80,13 @@ export type OrderBookOrders = OrderBookOrdersResponse;
 export interface Order {
   id: string;
   market_id: number;
-  side: 'buy' | 'sell';
-  type: 'limit' | 'market';
+  side: "buy" | "sell";
+  type: "limit" | "market";
   size: string;
   price: string;
   filled_size: string;
   remaining_size: string;
-  status: 'open' | 'filled' | 'cancelled' | 'rejected';
+  status: "open" | "filled" | "cancelled" | "rejected";
   created_at: string;
   updated_at: string;
   client_order_id?: string;
@@ -97,7 +95,7 @@ export interface Order {
 export interface Trade {
   id: string;
   market_id: number;
-  side: 'buy' | 'sell';
+  side: "buy" | "sell";
   size: string;
   price: string;
   fee: string;
@@ -105,6 +103,26 @@ export interface Trade {
   order_id: string;
   taker_order_id: string;
   maker_order_id: string;
+}
+
+export interface GetTradesParams {
+  sortBy: string;
+  limit: number;
+  authorization?: string;
+  auth?: string;
+  marketId?: number;
+  accountIndex?: number;
+  orderIndex?: number;
+  sortDir?: string;
+  cursor?: string;
+  from?: number;
+  askFilter?: number;
+}
+
+export interface TradesResponse {
+  code: number;
+  trades: Trade[];
+  cursor?: string;
 }
 
 export interface ExchangeStats {
@@ -123,13 +141,13 @@ export class OrderApi {
 
   public async getExchangeStats(): Promise<ExchangeStats> {
     const response = await this.client.get<ExchangeStats>(
-      '/api/v1/exchangeStats'
+      "/api/v1/exchangeStats"
     );
     return response.data;
   }
 
   public async getOrderBooks(): Promise<OrderBook[]> {
-    const response = await this.client.get<OrderBook[]>('/api/v1/orderBooks');
+    const response = await this.client.get<OrderBook[]>("/api/v1/orderBooks");
     return response.data;
   }
 
@@ -137,7 +155,7 @@ export class OrderApi {
     params?: OrderBookDetailsParams
   ): Promise<GetOrderBookDetailsResponse> {
     const response = await this.client.get<GetOrderBookDetailsResponse>(
-      '/api/v1/orderBookDetails',
+      "/api/v1/orderBookDetails",
       params?.market_id !== undefined
         ? { market_id: params.market_id }
         : undefined
@@ -149,7 +167,7 @@ export class OrderApi {
     params: OrderBookOrdersParams
   ): Promise<OrderBookOrdersResponse> {
     const response = await this.client.get<OrderBookOrdersResponse>(
-      '/api/v1/orderBookOrders',
+      "/api/v1/orderBookOrders",
       {
         market_id: params.market_id,
         ...(params.limit !== undefined ? { limit: params.limit } : {}),
@@ -159,34 +177,54 @@ export class OrderApi {
   }
 
   public async getRecentTrades(params: TradeParams): Promise<Trade[]> {
-    const response = await this.client.get<Trade[]>('/api/v1/recentTrades', {
+    const response = await this.client.get<Trade[]>("/api/v1/recentTrades", {
       market_id: params.market_id,
       limit: params.limit,
     });
     return response.data;
   }
 
-  public async getTrades(
-    params: TradeParams & PaginationParams
-  ): Promise<Trade[]> {
-    const response = await this.client.get<Trade[]>('/api/v1/trades', {
-      market_id: params.market_id,
+  public async getTrades(params: GetTradesParams): Promise<TradesResponse> {
+    const queryParams = {
+      sort_by: params.sortBy,
       limit: params.limit,
-      index: params.index,
-      sort: params.sort,
-    });
+      ...(params.auth && { auth: params.auth }),
+      ...(params.marketId !== undefined && { market_id: params.marketId }),
+      ...(params.accountIndex !== undefined && {
+        account_index: params.accountIndex,
+      }),
+      ...(params.orderIndex !== undefined && {
+        order_index: params.orderIndex,
+      }),
+      ...(params.sortDir && { sort_dir: params.sortDir }),
+      ...(params.cursor && { cursor: params.cursor }),
+      ...(params.from !== undefined && { from: params.from }),
+      ...(params.askFilter !== undefined && { ask_filter: params.askFilter }),
+    };
+
+    const config = params.authorization
+      ? { headers: { Authorization: params.authorization } }
+      : undefined;
+
+    const response = await this.client.get<TradesResponse>(
+      "/api/v1/trades",
+      queryParams,
+      config
+    );
     return response.data;
   }
 
   public async getAccountActiveOrders(
     accountIndex: number,
-    params?: PaginationParams
+    marketId: number,
+    auth?: string
   ): Promise<Order[]> {
     const response = await this.client.get<Order[]>(
-      '/api/v1/accountActiveOrders',
+      "/api/v1/accountActiveOrders",
       {
         account_index: accountIndex,
-        ...params,
+        market_id: marketId,
+        ...(auth ? { auth } : {}),
       }
     );
     return response.data;
@@ -194,30 +232,25 @@ export class OrderApi {
 
   public async getAccountInactiveOrders(
     accountIndex: number,
-    params?: PaginationParams
+    limit: number,
+    auth?: string,
+    marketId?: number,
+    params?: {
+      ask_filter?: number;
+      between_timestamps?: string;
+      cursor?: string;
+    }
   ): Promise<Order[]> {
     const response = await this.client.get<Order[]>(
-      '/api/v1/accountInactiveOrders',
+      "/api/v1/accountInactiveOrders",
       {
         account_index: accountIndex,
+        limit: limit,
+        ...(auth ? { auth } : {}),
+        ...(marketId !== undefined ? { market_id: marketId } : {}),
         ...params,
       }
     );
-    return response.data;
-  }
-
-  public async createOrder(params: CreateOrderParams): Promise<Order> {
-    const response = await this.client.post<Order>('/api/v1/orders', {
-      market_id: params.market_id,
-      side: params.side,
-      type: params.type,
-      size: params.size,
-      price: params.price,
-      reduce_only: params.reduce_only,
-      post_only: params.post_only,
-      time_in_force: params.time_in_force,
-      client_order_id: params.client_order_id,
-    });
     return response.data;
   }
 }

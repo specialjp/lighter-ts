@@ -100,6 +100,29 @@ export interface PublicPoolShare {
   value: string;
 }
 
+export interface GetPnLParams {
+  by: string;
+  value: string;
+  resolution: string;
+  startTimestamp: number;
+  endTimestamp: number;
+  countBack: number;
+  authorization?: string;
+  auth?: string;
+  ignoreTransfers?: boolean;
+}
+
+export interface PnLEntry {
+  timestamp: number;
+  pnl: string;
+  cumulative_pnl: string;
+}
+
+export interface AccountPnL {
+  code: number;
+  entries: PnLEntry[];
+}
+
 export class AccountApi {
   private client: ApiClient;
 
@@ -144,14 +167,27 @@ export class AccountApi {
     return response.data;
   }
 
-  public async getPnL(
-    accountIndex: number,
-    params?: { start_time?: number; end_time?: number }
-  ): Promise<any> {
-    const response = await this.client.get('/api/v1/pnl', {
-      account_index: accountIndex,
-      ...params,
-    });
+  public async getPnL(params: GetPnLParams): Promise<AccountPnL> {
+    const queryParams = {
+      by: params.by,
+      value: params.value,
+      resolution: params.resolution,
+      start_timestamp: params.startTimestamp,
+      end_timestamp: params.endTimestamp,
+      count_back: params.countBack,
+      ...(params.auth && { auth: params.auth }),
+      ...(params.ignoreTransfers !== undefined && { ignore_transfers: params.ignoreTransfers }),
+    };
+
+    const config = params.authorization
+      ? { headers: { Authorization: params.authorization } }
+      : undefined;
+
+    const response = await this.client.get<AccountPnL>(
+      '/api/v1/pnl',
+      queryParams,
+      config
+    );
     return response.data;
   }
 
