@@ -8,36 +8,82 @@
 // Core API Classes
 export { ApiClient } from './api/api-client';
 export { AccountApi } from './api/account-api';
+export { AnnouncementApi } from './api/announcement-api';
 export { BlockApi } from './api/block-api';
+export { BridgeApi } from './api/bridge-api';
+export { FundingApi } from './api/funding-api';
+export { NotificationApi } from './api/notification-api';
 export { OrderApi } from './api/order-api';
+export { ReferralApi } from './api/referral-api';
 export { TransactionApi } from './api/transaction-api';
 export { RootApi } from './api/root-api';
 export { CandlestickApi } from './api/candlestick-api';
 
+// Bridge Classes
+export { L1BridgeClient } from './bridge/l1-bridge-client';
+
 // Signer Client
 export { SignerClient } from './signer/wasm-signer-client';
-export type { SignerConfig } from './signer/wasm-signer-client';
+export type { 
+  SignerConfig,
+  CreateOrderParams as SignerCreateOrderParams,
+  CreateMarketOrderParams,
+  CancelOrderParams as SignerCancelOrderParams,
+  ChangeApiKeyParams
+} from './signer/wasm-signer-client';
 
-// Signer Server Client
-export { SignerServerClient, createSignerServerClient } from './utils/signer-server';
-export type { SignerServerConfig, SignerServerResponse } from './utils/signer-server';
+// Note: Signer Server Client removed - using local WASM signer instead
 
 // WASM Signer Classes
-export { WasmSignerClient, createWasmSignerClient } from './utils/wasm-signer';
-export { NodeWasmSignerClient, createNodeWasmSignerClient } from './utils/node-wasm-signer';
+export { WasmSignerClient, createWasmSignerClient, WasmManager } from './signer/wasm-signer';
 export type { 
   WasmSignerConfig, 
+  WasmConfig,
+  WasmClientType,
   CreateClientParams,
   CreateOrderParams,
   CancelOrderParams,
   CancelAllOrdersParams,
-  TransferParams,
   UpdateLeverageParams,
-  WasmSignerResponse
-} from './utils/wasm-signer';
+  ModifyOrderParams,
+  UpdateMarginParams,
+  CreateSubAccountParams,
+  CreatePublicPoolParams,
+  UpdatePublicPoolParams,
+  MintSharesParams,
+  BurnSharesParams,
+  CreateGroupedOrderParams,
+  CreateGroupedOrdersParams,
+  WasmSignerResponse,
+  ApiKeyPair
+} from './signer/wasm-signer';
+
+// Export Order Types and Enums from the unified order file
+export { 
+  OrderType,
+  TimeInForce,
+  TransactionStatus,
+  TransactionType
+} from './signer/wasm-signer-client';
+
+// Export MarketHelper for simplified market utilities
+export { MarketHelper } from './utils/market-helper';
+
+// Export Order Status Checking utilities
+export { checkOrderStatus, formatOrderResult, getCancelReason } from './utils/order-status-checker';
+export type { OrderStatusResult } from './utils/order-status-checker';
 
 // WebSocket Client
 export { WsClient } from './api/ws-client';
+export { WebSocketOrderClient } from './api/ws-order-client';
+export type {
+  LighterWsSendTx,
+  LighterWsSendBatchTx,
+  LighterWsTransaction,
+  WsOrderRequest,
+  WsOrderResponse,
+  WsConnectionConfig
+} from './api/ws-order-client';
 
 // Exception Classes
 export {
@@ -63,6 +109,9 @@ export type {
   ApiKey,
   PublicPool,
   PublicPoolShare,
+  FeeBucket,
+  PnLEntry,
+  PnLResponse,
   Trade
 } from './api/account-api';
 
@@ -71,6 +120,8 @@ export type {
   OrderBook,
   OrderBookDetail,
   GetOrderBookDetailsResponse,
+  OrderBookDetailsResponse,
+  OrderBookDetailItem,
   OrderBookOrders,
   OrderBookOrdersResponse,
   Order,
@@ -84,8 +135,48 @@ export type {
   Block,
   NextNonce,
   TxHash,
-  TxHashes
+  TxHashes,
+  DepositHistory,
+  DepositHistoryItem,
+  WithdrawHistory,
+  WithdrawHistoryItem
 } from './api/transaction-api';
+
+// Types from BridgeApi
+export type {
+  FastBridgeInfo,
+  BridgeSupportedNetwork
+} from './api/bridge-api';
+export type {
+  TransferParams,
+  WithdrawParams,
+  L1DepositParams,
+  L1DepositResult,
+  L1BridgeConfig
+} from './types/api';
+
+// Types from FundingApi
+export type {
+  FundingRate,
+  FundingRates
+} from './api/funding-api';
+
+// Types from NotificationApi
+export type {
+  ResultCode
+} from './api/notification-api';
+
+// Types from ReferralApi
+export type {
+  ReferralPointEntry,
+  ReferralPoints
+} from './api/referral-api';
+
+// Types from AnnouncementApi
+export type {
+  Announcement,
+  Announcements
+} from './api/announcement-api';
 
 // Types from BlockApi
 export type {
@@ -105,7 +196,6 @@ export type {
   OrderBookDetailsParams,
   OrderBookOrdersParams,
   TradeParams,
-  TransactionParams,
   BlockParams,
   PaginationParams,
   Configuration,
@@ -149,17 +239,12 @@ export type {
 
 // Utility Classes
 export { Config } from './utils/configuration';
-export { createApiKey, generateRandomSeed } from './utils/api-key-utils';
-export type { ApiKeyPair } from './utils/api-key-utils';
+// API Key utilities removed - use WASM signer for key generation
 
-// Transaction Utilities
-export { 
-  waitAndCheckTransaction, 
-  printTransactionResult, 
-  isTransactionSuccessful, 
-  getTransactionError 
-} from './utils/transaction-helper';
-export type { TransactionResult } from './utils/transaction-helper';
+// New Utility Exports
+export * from './utils/price-utils';
+export * from './utils/nonce-manager';
+// Client Factory removed - use direct client creation instead
 
 // Constants
 export const LIGHTER_CONSTANTS = {

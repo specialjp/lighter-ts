@@ -42,20 +42,17 @@ async function getCurrentMarketPrice(
   apiClient: ApiClient,
   marketIndex: number
 ): Promise<number> {
-  try {
-    const orderApi = new OrderApi(apiClient);
-    const details = await orderApi.getOrderBookDetails({
-      market_id: marketIndex,
-    });
+  const orderApi = new OrderApi(apiClient);
+  const details = await orderApi.getOrderBookDetails({
+    market_id: marketIndex,
+  });
 
-    if (details.order_book_details && details.order_book_details.length > 0) {
-      const marketInfo = details.order_book_details[0];
-      return marketInfo.last_trade_price;
-    }
-  } catch (error) {
-    console.error('Error fetching market price:', error);
+  if (details.order_book_details && details.order_book_details.length > 0) {
+    const marketInfo = details.order_book_details[0];
+    return marketInfo.last_trade_price;
   }
-  return 0;
+
+  throw new Error(`Failed to fetch market price for market ${marketIndex}`);
 }
 
 async function executeMarketOrderWithSlTp(

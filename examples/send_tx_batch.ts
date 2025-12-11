@@ -1,163 +1,111 @@
-// Send Transaction Batch Example
-// This example demonstrates how to send multiple transactions in a single batch
-// for improved efficiency and reduced latency
-
-import { SignerClient } from '../src/signer/wasm-signer-client';
-import { ApiClient } from '../src/api/api-client';
-import { TransactionApi } from '../src/api/transaction-api';
+import { SignerClient, ApiClient, OrderType, TransactionApi } from '../src';
 import * as dotenv from 'dotenv';
 
 dotenv.config();
 
-const BASE_URL = process.env['BASE_URL'] || 'https://mainnet.zklighter.elliot.ai';
-const API_KEY_PRIVATE_KEY = process.env['API_PRIVATE_KEY'];
-const ACCOUNT_INDEX = parseInt(process.env['ACCOUNT_INDEX'] || '0', 10);
-const API_KEY_INDEX = parseInt(process.env['API_KEY_INDEX'] || '0', 10);
+async function main() {
+  const BASE_URL = process.env.BASE_URL || "https://mainnet.zklighter.elliot.ai";
+  const API_PRIVATE_KEY = process.env.API_PRIVATE_KEY || "";
+  const ACCOUNT_INDEX = parseInt(process.env.ACCOUNT_INDEX || "1000");
+  const API_KEY_INDEX = parseInt(process.env.API_KEY_INDEX || "4");
 
-async function main(): Promise<void> {
-  if (!API_KEY_PRIVATE_KEY) {
-    console.error('❌ API_PRIVATE_KEY environment variable is required');
-    return;
-  }
-
-  console.log('📦 Batch Transaction Example\n');
-
-  const client = new SignerClient({
+  const apiClient = new ApiClient({ host: BASE_URL });
+  const signerClient = new SignerClient({
     url: BASE_URL,
-    privateKey: API_KEY_PRIVATE_KEY,
+    privateKey: API_PRIVATE_KEY,
     accountIndex: ACCOUNT_INDEX,
     apiKeyIndex: API_KEY_INDEX
   });
 
-  const apiClient = new ApiClient({ host: BASE_URL });
-  const transactionApi = new TransactionApi(apiClient);
-
   try {
-    await client.initialize();
-    await (client as any).ensureWasmClient();
+    await signerClient.initialize();
+    await signerClient.ensureWasmClient();
 
-    const err = client.checkClient();
-    if (err) {
-      console.error('❌ CheckClient error:', err);
-      return;
-    }
-
-    console.log('📝 Creating batch of 2 limit orders...\n');
-
-    // Get next nonce
-    const nextNonce = await transactionApi.getNextNonce(ACCOUNT_INDEX, API_KEY_INDEX);
-    let nonceValue = nextNonce.nonce;
-
-    // Calculate order expiry (1 hour from now)
-    const oneHourLater = Date.now() + (60 * 60 * 1000);
+    const nonces = await (signerClient as any).getNextNonces(2);
+    const txTypes: number[] = [];
+    const txInfos: string[] = [];
+    const baseIndex = Date.now();
+    const orderExpiry = Date.now() + (60 * 60 * 1000);
 
     // Sign first order
-    const askTxInfo = await (client as any).wallet.signCreateOrder({
+    const firstTxResponse = await (signerClient as any).wallet.signCreateOrder({
       marketIndex: 0,
-      clientOrderIndex: Date.now(),
-      baseAmount: 50,
-      price: 420000, // $4200
+      clientOrderIndex: baseIndex,
+      baseAmount: 100000,
+      price: 440000,
       isAsk: 1,
       orderType: SignerClient.ORDER_TYPE_LIMIT,
       timeInForce: SignerClient.ORDER_TIME_IN_FORCE_GOOD_TILL_TIME,
       reduceOnly: 0,
-      triggerPrice: 0,
-      orderExpiry: oneHourLater,
-      nonce: nonceValue++
+      triggerPrice: SignerClient.NIL_TRIGGER_PRICE,
+      orderExpiry: orderExpiry,
+      nonce: nonces[0],
+      apiKeyIndex: API_KEY_INDEX,
+      accountIndex: ACCOUNT_INDEX
     });
+    
+    if (firstTxResponse.error) {
+      console.error(`❌ First order signing failed: ${firstTxResponse.error}`);
+      return;
+    }
+    
+    txTypes.push(firstTxResponse.txType || SignerClient.TX_TYPE_CREATE_ORDER);
+    txInfos.push(firstTxResponse.txInfo);
 
     // Sign second order
-    const bidTxInfo = await (client as any).wallet.signCreateOrder({
+    const secondTxResponse = await (signerClient as any).wallet.signCreateOrder({
       marketIndex: 0,
-      clientOrderIndex: Date.now() + 1,
-      baseAmount: 50,
-      price: 410000, // $4100
+      clientOrderIndex: baseIndex + 1,
+      baseAmount: 200000,
+      price: 400000,
       isAsk: 0,
       orderType: SignerClient.ORDER_TYPE_LIMIT,
       timeInForce: SignerClient.ORDER_TIME_IN_FORCE_GOOD_TILL_TIME,
       reduceOnly: 0,
-      triggerPrice: 0,
-      orderExpiry: oneHourLater,
-      nonce: nonceValue++
-    });
-
-    // Send batch transaction
-    const txTypes = JSON.stringify([
-      SignerClient.TX_TYPE_CREATE_ORDER,
-      SignerClient.TX_TYPE_CREATE_ORDER
-    ]);
-    const txInfos = JSON.stringify([askTxInfo, bidTxInfo]);
-    
-    const batch1Hashes = await transactionApi.sendTransactionBatch({
-      tx_types: txTypes,
-      tx_infos: txInfos
+      triggerPrice: SignerClient.NIL_TRIGGER_PRICE,
+      orderExpiry: orderExpiry,
+      nonce: nonces[1],
+      apiKeyIndex: API_KEY_INDEX,
+      accountIndex: ACCOUNT_INDEX
     });
     
-    console.log('✅ Batch 1 submitted successfully!');
-    console.log('📋 Transaction Hashes:');
-    if (batch1Hashes.tx_hash && Array.isArray(batch1Hashes.tx_hash)) {
-      batch1Hashes.tx_hash.forEach((hash: string, idx: number) => {
-        console.log(`   ${idx + 1}. ${hash}`);
-      });
+    if (secondTxResponse.error) {
+      console.error(`❌ Second order signing failed: ${secondTxResponse.error}`);
+      return;
     }
-    console.log('');
-
-    // Wait before second batch
-    console.log('⏳ Waiting 5 seconds before second batch...\n');
-    await new Promise(resolve => setTimeout(resolve, 5000));
-
-    console.log('📝 Creating mixed batch (cancel + create order)...\n');
-
-    // Sign cancel order
-    const cancelTxInfo = await (client as any).wallet.signCancelOrder({
-      marketIndex: 0,
-      orderIndex: Date.now(),
-      nonce: nonceValue++
-    });
-
-    // Sign new order
-    const newAskTxInfo = await (client as any).wallet.signCreateOrder({
-      marketIndex: 0,
-      clientOrderIndex: Date.now() + 2,
-      baseAmount: 75,
-      price: 415000, // $4150
-      isAsk: 1,
-      orderType: SignerClient.ORDER_TYPE_LIMIT,
-      timeInForce: SignerClient.ORDER_TIME_IN_FORCE_GOOD_TILL_TIME,
-      reduceOnly: 0,
-      triggerPrice: 0,
-      orderExpiry: oneHourLater,
-      nonce: nonceValue++
-    });
-
-    // Send second batch
-    const txTypes2 = JSON.stringify([
-      SignerClient.TX_TYPE_CANCEL_ORDER,
-      SignerClient.TX_TYPE_CREATE_ORDER
-    ]);
-    const txInfos2 = JSON.stringify([cancelTxInfo, newAskTxInfo]);
     
-    const batch2Hashes = await transactionApi.sendTransactionBatch({
-      tx_types: txTypes2,
-      tx_infos: txInfos2
+    txTypes.push(secondTxResponse.txType || SignerClient.TX_TYPE_CREATE_ORDER);
+    txInfos.push(secondTxResponse.txInfo);
+
+    // Send batch
+    const transactionApi = new TransactionApi(apiClient);
+    const batchResult = await transactionApi.sendTransactionBatch({
+      tx_types: JSON.stringify(txTypes),
+      tx_infos: JSON.stringify(txInfos)
     });
     
-    console.log('✅ Batch 2 submitted successfully!');
-    console.log('📋 Transaction Hashes:');
-    if (batch2Hashes.tx_hash && Array.isArray(batch2Hashes.tx_hash)) {
-      batch2Hashes.tx_hash.forEach((hash: string, idx: number) => {
-        console.log(`   ${idx + 1}. ${hash}`);
-      });
+    if (batchResult.code && batchResult.code !== 200) {
+      console.error(`❌ Batch failed: ${batchResult.message || 'Unknown error'}`);
+      return;
+    }
+
+    if (batchResult.tx_hash && Array.isArray(batchResult.tx_hash)) {
+      for (const hash of batchResult.tx_hash) {
+        if (hash) {
+          try {
+            await signerClient.waitForTransaction(hash, 30000, 2000);
+          } catch (error) {
+            console.error(`❌ Transaction failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+          }
+        }
+      }
+      console.log(`✅ Batch completed: ${batchResult.tx_hash.length} transaction(s)`);
     }
 
   } catch (error) {
-    console.error('❌ Error:', error instanceof Error ? error.message : String(error));
-  } finally {
-    await client.close();
+    console.error(`❌ Error:`, error);
     await apiClient.close();
   }
 }
 
-if (require.main === module) {
-  main().catch(console.error);
-}
+main();

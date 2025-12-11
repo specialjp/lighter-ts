@@ -1,100 +1,38 @@
-export interface Configuration {
-  host: string;
-  apiKey?: string;
-  secretKey?: string;
-  timeout?: number;
-  userAgent?: string;
-}
+import type { components, paths, operations } from './generated/openapi';
+import type {
+  ZkLighterInfo,
+  ReqGetAccount,
+  ReqGetCandlesticks,
+  ReqGetOrderBookDetails,
+  ReqGetOrderBookOrders,
+  ReqGetRecentTrades,
+  ReqGetTrades,
+  ReqGetTx,
+  ReqGetBlock,
+  ReqGetBlockTxs,
+  ReqGetRangeWithCursor,
+  ReqGetRangeWithIndex,
+  ReqGetRangeWithIndexSortable
+} from './api';
 
-export interface ApiResponse<T = any> {
-  data: T;
-  status: number;
-  statusText: string;
-  headers: Record<string, string>;
-}
+/**
+ * Primary type exports
+ */
+export * from './config';
+export * from './api';
+export * from './trading';
+export * from './transaction';
 
-export interface ApiError {
-  message: string;
-  code?: string;
-  status?: number;
-}
+/**
+ * Strongly typed OpenAPI primitives for consumers that need full spec access.
+ */
+export type OpenApiComponents = components;
+export type OpenApiPaths = paths;
+export type OpenApiOperations = operations;
 
-export interface PaginationParams {
-  index?: number;
-  limit?: number;
-  sort?: 'asc' | 'desc';
-}
-
-export interface CursorParams {
-  cursor?: string;
-  limit?: number;
-}
-
-export interface AccountParams {
-  by: string;
-  value: string;
-}
-
-export interface BlockParams {
-  by: 'height' | 'hash';
-  value: string;
-}
-
-export interface TransactionParams {
-  by: 'sequence_index' | 'hash' | 'l1_tx_hash';
-  value: string;
-}
-
-export interface CandlestickParams {
-  market_id: number;
-  resolution: string;
-  start_timestamp?: number;
-  end_timestamp?: number;
-  count_back?: number;
-}
-
-export interface OrderBookDetailsParams {
-  market_id?: number;
-}
-
-export interface OrderBookOrdersParams {
-  market_id: number;
-  limit?: number;
-}
-
-export type OrderBookParams = OrderBookOrdersParams;
-
-export interface TradeParams {
-  market_id: number;
-  limit?: number;
-}
-
-export interface CreateOrderParams {
-  market_id: number;
-  side: 'buy' | 'sell';
-  type: 'limit' | 'market';
-  size: string;
-  price?: string;
-  reduce_only?: boolean;
-  post_only?: boolean;
-  time_in_force?: 'GTC' | 'IOC' | 'FOK';
-  client_order_id?: string;
-}
-
-export interface SendTransactionParams {
-  account_index: number;
-  api_key_index: number;
-  transaction: string;
-}
-
-export interface SendTransactionBatchParams {
-  account_index?: number;
-  api_key_index?: number;
-  transactions?: string[];
-  tx_types?: string; // JSON stringified array of transaction types
-  tx_infos?: string; // JSON stringified array of transaction infos
-}
-
+/**
+ * WebSocket Configuration and Types
+ */
 export interface WebSocketConfig {
   url: string;
   reconnectInterval?: number;
@@ -468,45 +406,37 @@ export interface WsAccountAllPositionsUpdate {
   type: 'update/account_all_positions';
 }
 
-export interface SignerConfig {
-  privateKey: string;
-  accountIndex: number;
-  apiKeyIndex: number;
+/**
+ * Legacy parameter type definitions (kept for backward compatibility)
+ */
+export interface PaginationParams {
+  index?: number;
+  limit?: number;
+  sort?: 'asc' | 'desc';
 }
 
-export interface ApiKeyConfig {
-  apiKey: string;
-  secretKey: string;
-  accountIndex: number;
-  apiKeyIndex: number;
+export interface OrderBookDetailsParams {
+  market_id?: number;
 }
 
-export interface Block {
-  height: number;
-  hash: string;
-  timestamp: number;
-  transactions: string[];
-  parent_hash: string;
-  state_root: string;
+export interface OrderBookOrdersParams {
+  market_id: number;
+  limit?: number;
 }
 
-export interface Candlestick {
-  timestamp: number;
-  open: string;
-  high: string;
-  low: string;
-  close: string;
-  volume: string;
-}
-
-export interface Funding {
-  timestamp: number;
-  funding_rate: string;
-  funding_index: string;
-}
-
-export interface RootInfo {
-  version: string;
-  chain_id: string;
-  block_height: number;
-}
+/**
+ * Convenience aliases that align legacy SDK names with OpenAPI generated types.
+ */
+export type RootInfo = ZkLighterInfo;
+export type AccountParams = ReqGetAccount;
+export type CandlestickParams = ReqGetCandlesticks;
+export type OrderBookParams = ReqGetOrderBookDetails;
+export type OrderDepthParams = ReqGetOrderBookOrders;
+export type TradeParams = ReqGetRecentTrades;
+export type TradesQueryParams = ReqGetTrades;
+export type TransactionParams = ReqGetTx;
+export type BlockParams = ReqGetBlock;
+export type BlockTransactionsParams = ReqGetBlockTxs;
+export type CursorParams = ReqGetRangeWithCursor;
+export type IndexPaginationParams = ReqGetRangeWithIndex;
+export type SortableIndexPaginationParams = ReqGetRangeWithIndexSortable;

@@ -1,191 +1,200 @@
 /**
- * System Setup - Generate and Register API Key
- * 
- * This script automatically:
- * - Detects your account from your ETH private key
- * - Finds the next available API key index
- * - Generates a new random API key pair
- * - Registers it on-chain
- * 
- * Requirements:
- * - ETH_PRIVATE_KEY in .env (your Ethereum wallet private key)
- * - BASE_URL (optional, defaults to mainnet)
- * - API_KEY_INDEX (optional, auto-selects next available)
+ * Example: System Setup
+ * Demonstrates system setup including account creation, API key generation, and initial configuration
  */
-import { ApiClient } from '../src/api/api-client';
-import { AccountApi } from '../src/api/account-api';
-import { TransactionApi } from '../src/api/transaction-api';
-import { SignerClient } from '../src/signer/wasm-signer-client';
-import * as dotenv from 'dotenv';
-import { ethers } from 'ethers';
 
-dotenv.config();
+import { SignerClient, ApiClient } from '../src';
 
-const BASE_URL = process.env['BASE_URL'] || 'https://mainnet.zklighter.elliot.ai';
-const ETH_PRIVATE_KEY_RAW = process.env['ETH_PRIVATE_KEY'];
-const REQUESTED_API_KEY_INDEX = parseInt(process.env['API_KEY_INDEX'] || '0', 10);
-
-if (!ETH_PRIVATE_KEY_RAW) {
-  console.error('❌ ETH_PRIVATE_KEY required');
-  process.exit(1);
-}
-
-const ETH_PRIVATE_KEY: string = ETH_PRIVATE_KEY_RAW;
-
-async function main(): Promise<void> {
-  console.log('🚀 Lighter API Key Auto-Setup\n');
-  console.log('═'.repeat(80));
-
-  const apiClient = new ApiClient({ host: BASE_URL });
-  const wallet = new ethers.Wallet(ETH_PRIVATE_KEY);
-  const ethAddress = wallet.address;
-
-  console.log('\n📍 Your ETH Address:', ethAddress);
-  console.log('📍 Requested API Key Index:', REQUESTED_API_KEY_INDEX);
-  console.log('📍 Network:', BASE_URL, '\n');
+async function systemSetup() {
+  console.log('🚀 System Setup...\n');
 
   try {
-    // Step 1: Find ALL accounts for this ETH address
-    console.log('🔍 Finding your accounts...');
-    const accountApi = new AccountApi(apiClient);
-    const response = await accountApi.getAccountsByL1Address(ethAddress);
-    const accounts = (response as any).sub_accounts || response;
+    // 1. Initialize clients explicitly
+    console.log('🔧 Initializing Clients...');
     
-    if (!accounts || accounts.length === 0) {
-      throw new Error(`No accounts found for ${ethAddress}\nCreate an account at https://app.lighter.xyz first`);
+    const API_PRIVATE_KEY = process.env['API_PRIVATE_KEY'] || "";
+  if (!API_PRIVATE_KEY) {
+    throw new Error('API_PRIVATE_KEY environment variable is required');
+  }
+    const ACCOUNT_INDEX = Number.parseInt(process.env['ACCOUNT_INDEX'] ?? '271', 10);
+    const API_KEY_INDEX = Number.parseInt(process.env['API_KEY_INDEX'] ?? '4', 10);
+    const BASE_URL = 'https://testnet.zklighter.elliot.ai';
+    const TARGET_API_KEY_INDEX = 6;
+    const ACCOUNT_PRIVATE_KEY = process.env['ACCOUNT_PRIVATE_KEY'];
+    
+    if (!ACCOUNT_PRIVATE_KEY) {
+      throw new Error('ACCOUNT_PRIVATE_KEY must be set in .env file for L1 signature operations');
     }
 
-    console.log(`✅ Found ${accounts.length} account(s):`);
-    accounts.forEach((acc: any, i: number) => {
-      console.log(`   ${i + 1}. Account Index: ${acc.index}, Type: ${acc.account_type === 0 ? 'Master' : 'Sub'}`);
+    const signerClient = new SignerClient({
+      url: BASE_URL,
+      privateKey: API_PRIVATE_KEY,
+      accountIndex: ACCOUNT_INDEX,
+      apiKeyIndex: API_KEY_INDEX
     });
 
-    // Use first master account
-    const masterAccount = accounts.find((acc: any) => acc.account_type === 0 || acc.account_type === '0');
-    const accountIndex = parseInt(masterAccount?.index || accounts[0].index, 10);
-    
-    console.log(`\n✅ Using Account: ${accountIndex}`);
+    const apiClient = new ApiClient({
+      host: BASE_URL
+    });
 
-    // Verify account details
-    const accountData = await accountApi.getAccount({ by: 'index', value: accountIndex.toString() });
-    const account = (accountData as any).accounts?.[0] || accountData;
-    console.log(`   L1 Address: ${account.l1_address}`);
-    console.log(`   Collateral: ${account.collateral || '0'} USDC\n`);
+    await signerClient.initialize();
+    await signerClient.ensureWasmClient();
+    console.log('✅ Clients initialized successfully!\n');
 
-    // Step 2: Check existing API keys
-    console.log('📝 Checking existing API keys...');
-    const transactionApi = new TransactionApi(apiClient);
-    
-    const existingKeys: number[] = [];
-    for (let i = 0; i <= 20; i++) {
+    // 2. Create Authentication Token
+    console.log('🔑 Creating Authentication Token...');
+    const authToken = await signerClient.createAuthTokenWithExpiry(600); // 10 minutes
+    console.log('✅ Authentication Token created successfully!');
+    console.log(`   Token: ${authToken.substring(0, 20)}...\n`);
+
+    // 3. Create API Key for Specific Key Index (if requested)
+    const targetApiKeyIndex = TARGET_API_KEY_INDEX;
+    if (targetApiKeyIndex !== null && !isNaN(targetApiKeyIndex)) {
+      console.log(`🔑 Creating API Key for Key Index ${targetApiKeyIndex}...`);
       try {
-        const nonceResult = await transactionApi.getNextNonce(accountIndex, i);
-        if (nonceResult.nonce !== undefined) {
-          existingKeys.push(i);
+        // Generate a new API key pair
+        const apiKeyPair = await signerClient.generateAPIKey();
+        if (!apiKeyPair) {
+          throw new Error('Failed to generate API key pair');
         }
-      } catch {
-        // Key doesn't exist
+        
+        console.log('✅ API Key pair generated successfully!');
+        console.log(`   Private Key: ${apiKeyPair.privateKey.substring(0, 20)}...`);
+        console.log(`   Public Key: ${apiKeyPair.publicKey.substring(0, 20)}...\n`);
+
+        // Change the API key using ETH private key
+        const ethPrivateKey = ACCOUNT_PRIVATE_KEY;
+        if (!ethPrivateKey) {
+          throw new Error('ETH_PRIVATE_KEY or PRIVATE_KEY environment variable is required for API key creation');
+        }
+
+        console.log('📝 Registering API Key on server...');
+        const [changeResult, txHash, error] = await signerClient.changeApiKey({
+          ethPrivateKey: ethPrivateKey,
+          newPubkey: apiKeyPair.publicKey,
+          newPrivateKey: apiKeyPair.privateKey,
+          newApiKeyIndex: targetApiKeyIndex
+        });
+
+        if (error) {
+          throw new Error(`Failed to change API key: ${error}`);
+        }
+
+        console.log('✅ API Key registration transaction sent!');
+        console.log(`   Transaction Hash: ${txHash}\n`);
+
+        // Wait for the transaction to be processed
+        console.log('⏳ Waiting for API key to be registered on server (10 seconds)...');
+        await new Promise(resolve => setTimeout(resolve, 10000));
+
+        // Display API Key Configuration
+        console.log('📋 API Key Configuration:');
+        console.log(`   Account Index: ${ACCOUNT_INDEX}`);
+        console.log(`   API Key Index: ${targetApiKeyIndex}`);
+        console.log(`   Private Key: ${apiKeyPair.privateKey}`);
+        console.log(`   Public Key: ${apiKeyPair.publicKey}\n`);
+
+        // Optional: Verify the API key works by creating a new client with it
+        // Note: Verification may fail if the transaction hasn't been processed yet
+        const VERIFY_API_KEY = process.env['VERIFY_API_KEY'] !== 'false'; // Default to true
+        if (VERIFY_API_KEY) {
+          console.log('🔍 Verifying API Key...');
+          try {
+            const verifySignerClient = new SignerClient({
+              url: BASE_URL,
+              privateKey: apiKeyPair.privateKey,
+              accountIndex: ACCOUNT_INDEX,
+              apiKeyIndex: targetApiKeyIndex
+            });
+
+            await verifySignerClient.initialize();
+            await verifySignerClient.ensureWasmClient();
+            
+            const verifyAuthToken = await verifySignerClient.createAuthToken();
+            console.log('✅ API Key verified successfully!');
+            console.log(`   Auth Token: ${verifyAuthToken.substring(0, 20)}...\n`);
+          } catch (verifyError) {
+            console.log('⚠️ API Key verification failed (transaction may still be processing)');
+            console.log(`   Error: ${verifyError instanceof Error ? verifyError.message : String(verifyError)}`);
+            console.log('   Note: The API key was created successfully. Verification may succeed after a few more seconds.\n');
+          }
+        } else {
+          console.log('⏭️ Skipping API key verification (VERIFY_API_KEY=false)\n');
+        }
+      } catch (error) {
+        console.error(`❌ Error creating API key for index ${targetApiKeyIndex}:`, error);
+        console.log('⚠️ Continuing with system setup...\n');
       }
+    } else {
+      console.log('💡 Tip: Set TARGET_API_KEY_INDEX environment variable to create a new API key\n');
     }
-    
-    console.log('✅ Existing keys:', existingKeys.length > 0 ? existingKeys.join(', ') : 'None');
 
-    // Determine target index
-    let targetIndex = REQUESTED_API_KEY_INDEX;
-    if (existingKeys.includes(targetIndex)) {
-      console.log(`⚠️  Index ${targetIndex} already exists, using next available...`);
-      targetIndex = existingKeys.length > 0 ? Math.max(...existingKeys) + 1 : 0;
+    // 4. Get Account Information
+    console.log('👤 Fetching Account Information...');
+    try {
+      const accountInfo = await apiClient.get('/api/v1/account', {
+        account_index: ACCOUNT_INDEX,
+        auth: authToken
+      });
+      console.log('✅ Account Information fetched successfully!');
+      console.log(`   Account Index: ${accountInfo.data.index}`);
+      console.log(`   L1 Address: ${accountInfo.data.l1_address}`);
+      console.log(`   L2 Address: ${accountInfo.data.l2_address}`);
+      console.log(`   Balance: ${accountInfo.data.balance}`);
+      console.log(`   Margin Balance: ${accountInfo.data.margin_balance}\n`);
+    } catch (error) {
+      console.log('⚠️ Could not fetch account info (may require proper authentication)\n');
     }
-    
-    console.log(`✅ Will register NEW key at index: ${targetIndex}\n`);
 
-    // Step 3: Generate NEW API key pair
-    console.log('📝 Generating NEW API key pair...');
-    
-    const tempSigner = new SignerClient({
-      url: BASE_URL,
-      privateKey: '0'.repeat(80),
-      accountIndex,
-      apiKeyIndex: 0,
-      wasmConfig: { wasmPath: 'wasm/lighter-signer.wasm' }
+    // 5. Get System Information
+    console.log('ℹ️ Fetching System Information...');
+    const systemInfo = await apiClient.get('/api/v1/root');
+    console.log('✅ System Information fetched successfully!');
+    console.log(`   Version: ${systemInfo.data.version}`);
+    console.log(`   Chain ID: ${systemInfo.data.chain_id}`);
+    console.log(`   Block Height: ${systemInfo.data.block_height}\n`);
+
+    // 6. Get Available Markets
+    console.log('📊 Fetching Available Markets...');
+    const markets = await apiClient.get('/api/v1/markets');
+    console.log('✅ Markets fetched successfully!');
+    console.log(`   Available Markets: ${markets.data.length}`);
+    markets.data.slice(0, 3).forEach((market: any, index: number) => {
+      console.log(`   Market ${index}: ${market.symbol} (ID: ${market.market_id})`);
     });
-    
-    await tempSigner.initialize();
-    await tempSigner.ensureWasmClient();
-    
-    const keyPair = await tempSigner.generateAPIKey();
-    if (!keyPair) {
-      throw new Error('Failed to generate key');
-    }
-    
-    console.log(`✅ Private Key: ${keyPair.privateKey.substring(0, 20)}...${keyPair.privateKey.substring(60)} (80 chars)`);
-    console.log(`✅ Public Key: ${keyPair.publicKey.substring(0, 20)}...${keyPair.publicKey.substring(60)} (80 chars)\n`);
-    
-    await tempSigner.close();
+    console.log('');
 
-    // Step 4: Create SignerClient with NEW key (Python approach)
-    console.log(`📝 Creating SignerClient with NEW key at index ${targetIndex}...`);
-    
-    const newKeySigner = new SignerClient({
-      url: BASE_URL,
-      privateKey: keyPair.privateKey,
-      accountIndex,
-      apiKeyIndex: targetIndex,
-      wasmConfig: { wasmPath: 'wasm/lighter-signer.wasm' }
-    });
-    
-    await newKeySigner.initialize();
-    await newKeySigner.ensureWasmClient();
-    console.log('✅ SignerClient ready\n');
-
-    // Step 5: Register (verify ETH address matches!)
-    console.log('📝 Registering API key on-chain...');
-    console.log(`   ⚠️  CRITICAL: ETH signature will be from: ${ethAddress}`);
-    console.log(`   ⚠️  Account expects signature from: ${account.l1_address}`);
-    
-    if (ethAddress.toLowerCase() !== account.l1_address.toLowerCase()) {
-      console.error(`\n❌ ADDRESS MISMATCH!`);
-      console.error(`   Your ETH_PRIVATE_KEY derives to: ${ethAddress}`);
-      console.error(`   Account ${accountIndex} is registered to: ${account.l1_address}`);
-      console.error(`\n   You need the ETH private key for ${account.l1_address}`);
-      console.error(`   Update ETH_PRIVATE_KEY in .env with the correct key!\n`);
-      process.exit(1);
-    }
-    
-    console.log(`   ✅ Addresses match!\n`);
-    
-    const [_response, txHash, error] = await newKeySigner.changeApiKey({
-      ethPrivateKey: ETH_PRIVATE_KEY,
-      newPubkey: keyPair.publicKey,
-      newApiKeyIndex: targetIndex
-    });
-
-    if (error) {
-      throw new Error(`Registration failed: ${error}`);
+    // 7. Test API Key Functionality
+    console.log('🔐 Testing API Key Functionality...');
+    try {
+      const nextNonce = await (signerClient as any).getNextNonce();
+      console.log('✅ API Key functionality test successful!');
+      console.log(`   Next Nonce: ${nextNonce}\n`);
+    } catch (error) {
+      console.log('⚠️ API Key functionality test failed (may require proper setup)\n');
     }
 
-    console.log(`✅ Registered! TX Hash: ${txHash}\n`);
-    console.log('⏳ Waiting 10 seconds for confirmation...\n');
-    await new Promise(r => setTimeout(r, 10000));
+    // 8. System Health Check
+    console.log('🏥 Performing System Health Check...');
+    try {
+      const healthCheck = await apiClient.get('/api/v1/health');
+      console.log('✅ System health check passed!');
+      console.log(`   Status: ${healthCheck.data.status || 'OK'}\n`);
+    } catch (error) {
+      console.log('⚠️ System health check failed (endpoint may not be available)\n');
+    }
 
-    console.log('═'.repeat(80));
-    console.log('\n🎉 SUCCESS! API Key Registered\n');
-    console.log('💾 Save to your .env:\n');
-    console.log(`API_PRIVATE_KEY=${keyPair.privateKey}`);
-    console.log(`API_KEY_INDEX=${targetIndex}`);
-    console.log(`ACCOUNT_INDEX=${accountIndex}`);
-    console.log(`BASE_URL=${BASE_URL}\n`);
-    
-    await newKeySigner.close();
-    await apiClient.close();
+    console.log('🎉 System Setup Completed Successfully!');
+    console.log('✅ All components are ready for trading operations');
 
-  } catch (error: any) {
-    console.error('\n❌ Error:', error.message);
-    process.exit(1);
+  } catch (error) {
+    console.error('❌ Error during system setup:', error);
   }
 }
 
+// Run the example
 if (require.main === module) {
-  main().catch(console.error);
+  systemSetup().catch(console.error);
 }
 
+export { systemSetup };

@@ -107,6 +107,7 @@ export class WsClient {
       throw new Error('WebSocket is not connected');
     }
 
+    // Use the same format as send() method for consistency
     const message: any = {
       type: 'subscribe',
       channel: subscription.channel,
@@ -388,6 +389,7 @@ export class WsClient {
       throw new Error('WebSocket is not connected');
     }
 
+    // Use the same format as send() method for consistency
     const message = {
       type: 'unsubscribe',
       channel,

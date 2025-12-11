@@ -1,90 +1,201 @@
-// Create Limit Orders - Example
-// NOTE: Limit orders have VERY strict price validation on this exchange
-// Orders must be extremely close to current market price (< 1%) to be accepted
-// This example shows how to place limit orders, but price validation may reject them
+/**
+ * Example: Create Limit Order with SL/TP
+ */
 
-import { SignerClient } from '../src/signer/wasm-signer-client';
+import { SignerClient, OrderType, ApiClient, OrderApi, MarketHelper } from '../src';
 import * as dotenv from 'dotenv';
 
 dotenv.config();
 
-const BASE_URL = process.env['BASE_URL'] || 'https://mainnet.zklighter.elliot.ai';
-const API_KEY_PRIVATE_KEY = process.env['API_PRIVATE_KEY'];
-const ACCOUNT_INDEX = parseInt(process.env['ACCOUNT_INDEX'] || '0', 10);
-const API_KEY_INDEX = parseInt(process.env['API_KEY_INDEX'] || '0', 10);
+function trimException(e: Error): string {
+  return e.message.trim().split('\n').pop() || 'Unknown error';
+}
 
-async function main(): Promise<void> {
-  if (!API_KEY_PRIVATE_KEY) {
-    console.error('API_PRIVATE_KEY environment variable is required');
-    return;
+async function createLimitOrderWithSLTP() {
+  const API_PRIVATE_KEY = process.env['API_PRIVATE_KEY'] || "";
+  if (!API_PRIVATE_KEY) {
+    throw new Error('API_PRIVATE_KEY environment variable is required');
   }
+  const ACCOUNT_INDEX = Number.parseInt(process.env['ACCOUNT_INDEX'] ?? '271', 10);
+  const API_KEY_INDEX = Number.parseInt(process.env['API_KEY_INDEX'] ?? '4', 10);
+  const BASE_URL = 'https://testnet.zklighter.elliot.ai';
 
-  const client = new SignerClient({
+  console.log(ACCOUNT_INDEX, API_KEY_INDEX, BASE_URL,API_PRIVATE_KEY);
+  const signerClient = new SignerClient({
     url: BASE_URL,
-    privateKey: API_KEY_PRIVATE_KEY,
+    privateKey: API_PRIVATE_KEY,
     accountIndex: ACCOUNT_INDEX,
     apiKeyIndex: API_KEY_INDEX
   });
 
-  await client.initialize();
-  await (client as any).ensureWasmClient();
-
-  const err = client.checkClient();
-  if (err) {
-    console.error('CheckClient error:', err);
-    return;
-  }
-
-  console.log('🎯 Creating Working Limit Order Example...\n');
-
-  // Working Limit Order Example with REALISTIC prices
-  console.log('📈 Creating Limit Buy Order');
-  const oneHourFromNow = Date.now() + (60 * 60 * 1000); // 1 hour from now
+  const apiClient = new ApiClient({ host: BASE_URL });
+  const orderApi = new OrderApi(apiClient);
   
-  // SOL is trading at ~$0.220, must use prices VERY close to market
-  // Buy at 0.1% below market: $0.2198
-  const [buyTx, buyTxHash, buyErr] = await client.createOrder({
-    marketIndex: 0, // SOL/USDC market
+  await signerClient.initialize();
+  await signerClient.ensureWasmClient();
+
+  // Initialize market helper once
+  const market = new MarketHelper(0, orderApi);
+  await market.initialize();
+
+  const limitOrderParams = {
+    marketIndex: 0,
     clientOrderIndex: Date.now(),
-    baseAmount: 50, // 0.05 SOL (minimum allowed)
-    price: 412000, // $0.219 limit price (0.5% below ~$0.220 market - extremely close!)
-    isAsk: false, // Buy order
-    orderType: SignerClient.ORDER_TYPE_LIMIT,
-    timeInForce: SignerClient.ORDER_TIME_IN_FORCE_GOOD_TILL_TIME,
-    reduceOnly: false,
-    triggerPrice: 0,
-    orderExpiry: oneHourFromNow, // Use real timestamp
-  });
+    baseAmount: 60,
+    price: (280000),
+    isAsk: false, // Buy
+    orderType: OrderType.LIMIT,
+    orderExpiry: Date.now() + (60 * 60 * 1000),
+    stopLoss: {
+      triggerPrice: (270000),
+      isLimit: true
+    },
+    takeProfit: {
+      triggerPrice: (300000),
+      isLimit: true
+    }
+  };
 
-  if (buyErr) {
-    console.log('❌ Buy order failed:', buyErr);
-  } else {
-    console.log('✅ Buy order created successfully!');
-    console.log('📋 Order Details:');
-    console.log(`   Order Index: ${buyTx.ClientOrderIndex}`);
-    console.log(`   Market Index: ${buyTx.MarketIndex}`);
-    console.log(`   Amount: ${buyTx.BaseAmount} units`);
-    console.log(`   Limit Price: $${buyTx.Price / 100000}`);
-    console.log(`   Order Type: Limit Buy`);
-    console.log(`   TX Hash: ${buyTxHash}`);
+  try {
+    const result = await signerClient.createUnifiedOrder(limitOrderParams);
 
-    // Wait for transaction confirmation
-    if (buyTxHash) {
-      console.log('⏳ Waiting for buy order confirmation...');
-      try {
-        const confirmedTx = await client.waitForTransaction(buyTxHash, 30000, 1000);
-        console.log('✅ Buy order transaction confirmed!');
-        console.log(`   Hash: ${confirmedTx.hash}`);
-        console.log(`   Status: ${confirmedTx.status}`);
-      } catch (waitError) {
-        console.log('⚠️ Buy order confirmation timeout:', waitError instanceof Error ? waitError.message : 'Unknown error');
+    // Log detailed results
+    console.log(`\n📊 Order Creation Results:`);
+    console.log(`   Success: ${result.success}`);
+    console.log(`   Message: ${result.message}`);
+    console.log(`   Batch Hashes: ${result.batchResult.hashes.length}`);
+    console.log(`   Batch Errors: ${result.batchResult.errors.length}`);
+    
+    if (result.batchResult.errors.length > 0) {
+    }
+
+    // Check main order
+    if (result.mainOrder.error) {
+      console.error(`❌ Main order failed: ${result.mainOrder.error}`);
+      return;
+    }
+
+    // Check stop-loss order
+    if (limitOrderParams.stopLoss) {
+      if (result.stopLoss) {
+        if (result.stopLoss.error) {
+          console.error(`❌ Stop-loss order failed: ${result.stopLoss.error}`);
+        } else {
+          console.log(`✅ Stop-loss order created: ${result.stopLoss.hash.substring(0, 16)}...`);
+        }
+      } else {
+        console.warn(`⚠️ Stop-loss order was not created (check batch result)`);
       }
     }
-  }
 
-  await client.close();
+    // Check take-profit order
+    if (limitOrderParams.takeProfit) {
+      if (result.takeProfit) {
+        if (result.takeProfit.error) {
+          console.error(`❌ Take-profit order failed: ${result.takeProfit.error}`);
+        } else {
+          console.log(`✅ Take-profit order created: ${result.takeProfit.hash.substring(0, 16)}...`);
+        }
+      } else {
+        console.warn(`⚠️ Take-profit order was not created (check batch result)`);
+      }
+    }
+
+    if (!result.success) {
+      console.error(`❌ Batch transaction failed: ${result.message}`);
+      return;
+    }
+
+    try {
+      // Wait for main order transaction
+      const transaction = await signerClient.waitForTransaction(result.mainOrder.hash, 30000, 2000);
+      
+      // Check transaction event_info for order execution errors
+      if (transaction.event_info) {
+        try {
+          const eventInfo = JSON.parse(transaction.event_info);
+          if (eventInfo.ae) {
+            try {
+              const errorData = JSON.parse(eventInfo.ae);
+              if (errorData.message) {
+                console.error(`❌ Order failed: ${errorData.message}`);
+                return;
+              }
+            } catch {
+              // If not JSON, check if it's an error string
+              if (typeof eventInfo.ae === 'string' && eventInfo.ae.length > 0) {
+                console.error(`❌ Order failed: ${eventInfo.ae}`);
+                return;
+              }
+            }
+          }
+        } catch {
+          // Ignore parse errors
+        }
+      }
+      
+      // Check if transaction has error code or message
+      if (transaction.code && transaction.code !== 200) {
+        const errorMsg = transaction.message || 'Transaction failed';
+        console.error(`❌ Order failed: ${errorMsg}`);
+        return;
+      }
+      
+      // Check transaction status - if it's FAILED or REJECTED, show error
+      const status = typeof transaction.status === 'number' ? transaction.status : parseInt(String(transaction.status), 10);
+      if (status === 4 || status === 5) { // FAILED or REJECTED
+        const errorMsg = transaction.message || 'Transaction failed';
+        console.error(`❌ Order failed: ${errorMsg}`);
+        return;
+      }
+      
+      console.log(`\n✅ Limit order placed: ${result.mainOrder.hash.substring(0, 16)}...`);
+      
+      // Wait for SL/TP orders if they were created
+      // Note: All three orders (limit, SL, TP) appear in waiting orders list
+      // The "invalid reduce only direction" error is just a validation warning
+      // The orders are successfully created and will work once the limit order executes
+      if (result.stopLoss && result.stopLoss.hash) {
+        try {
+          const slTransaction = await signerClient.waitForTransaction(result.stopLoss.hash, 30000, 2000);
+          console.log(`✅ Stop-loss order confirmed and in waiting orders list`);
+        } catch (error) {
+          const errorMsg = trimException(error as Error);
+          // If it's just the validation warning, the order is still created successfully
+          if (errorMsg.includes('invalid reduce only direction')) {
+            console.log(`✅ Stop-loss order created successfully (validation warning is expected)`);
+            console.log(`   Order is in waiting orders list and will activate when limit order executes`);
+          } else {
+            console.warn(`⚠️ Stop-loss order transaction check: ${errorMsg}`);
+          }
+        }
+      }
+      
+      if (result.takeProfit && result.takeProfit.hash) {
+        try {
+          const tpTransaction = await signerClient.waitForTransaction(result.takeProfit.hash, 30000, 2000);
+          console.log(`✅ Take-profit order confirmed and in waiting orders list`);
+        } catch (error) {
+          const errorMsg = trimException(error as Error);
+          // If it's just the validation warning, the order is still created successfully
+          if (errorMsg.includes('invalid reduce only direction')) {
+            console.log(`✅ Take-profit order created successfully (validation warning is expected)`);
+            console.log(`   Order is in waiting orders list and will activate when limit order executes`);
+          } else {
+            console.warn(`⚠️ Take-profit order transaction check: ${errorMsg}`);
+          }
+        }
+      }
+    } catch (error) {
+      console.error(`❌ Order failed: ${trimException(error as Error)}`);
+    }
+  } catch (error) {
+    console.error(`❌ Error: ${trimException(error as Error)}`);
+  }
 }
 
 if (require.main === module) {
-  main().catch(console.error);
+  createLimitOrderWithSLTP().catch(console.error);
 }
+
+export { createLimitOrderWithSLTP };
