@@ -499,6 +499,123 @@ Check the `examples/` directory for comprehensive usage examples:
 
 **Support**: Functionality is unchanged from the original SDK; this fork focuses on TypeScript type improvements and npm distribution only.
 
+## Migration Guide
+
+If you're upgrading from `lighter-ts-sdk` to `@specialjp/lighter-sdk`, here are the key changes:
+
+### Package Name
+
+```bash
+# Old
+npm install lighter-ts-sdk
+
+# New
+npm install @specialjp/lighter-sdk
+```
+
+### Import Statements
+
+```typescript
+// Old
+import { SignerClient, ApiClient } from 'lighter-ts-sdk';
+
+// New
+import { SignerClient, ApiClient } from '@specialjp/lighter-sdk';
+```
+
+### WebSocket API Changes
+
+The WebSocket API has been significantly improved with better type safety:
+
+#### Configuration
+
+```typescript
+// Old
+const wsClient = new WsClient({
+  url: 'wss://mainnet.zklighter.elliot.ai/ws',
+  accountIndex: 123,
+  apiKeyIndex: 0,
+  privateKey: 'your-private-key',
+  onMessage: (message) => console.log(message),
+  onError: (error) => console.error(error)
+});
+
+// New
+const wsClient = new WsClient({
+  url: 'wss://mainnet.zklighter.elliot.ai/stream',  // Changed path from /ws to /stream
+  // Authentication params removed from config (now passed per-subscription)
+  onMessage: (message) => console.log(message),
+  onError: (error) => console.error(error),
+  onOpen: () => console.log('Connected'),
+  onClose: () => console.log('Disconnected')
+});
+```
+
+#### Subscriptions
+
+```typescript
+// Old - Generic subscription
+wsClient.subscribe('orderbook', { market_id: 0 });
+wsClient.subscribe('account', { account_index: 123 });
+wsClient.on('orderbook', (data) => { /* handle */ });
+
+// New - Typed subscription methods
+wsClient.subscribeOrderBook(0, (update: WsOrderBookUpdate) => {
+  console.log('Order book:', update.order_book);
+});
+
+wsClient.subscribeAccountAll(123, (update: WsAccountAllUpdate) => {
+  console.log('Account positions:', update.positions);
+});
+
+wsClient.subscribeTrades(0, (update: WsTradeUpdate) => {
+  console.log('Trades:', update.trades);
+});
+
+wsClient.subscribeMarketStats(0, (update: WsMarketStatsUpdate) => {
+  console.log('Market stats:', update.market_stats);
+});
+```
+
+#### Authenticated Subscriptions
+
+For private account data, authentication is now passed per subscription:
+
+```typescript
+// Authenticated subscriptions require auth token
+const authToken = 'your-auth-token';
+
+wsClient.subscribeAccountMarket(marketId, accountId, authToken, (update) => {
+  console.log('Account market data:', update);
+});
+
+wsClient.subscribeAccountAllOrders(accountId, authToken, (update) => {
+  console.log('All orders:', update.orders);
+});
+```
+
+### Type Safety Improvements
+
+All WebSocket update types are now properly exported:
+
+- `WsOrderBookUpdate` - Order book snapshots
+- `WsMarketStatsUpdate` - Market statistics
+- `WsTradeUpdate` - Trade executions
+- `WsAccountAllUpdate` - Account-wide updates
+- `WsAccountMarketUpdate` - Market-specific account data
+- And many more...
+
+Import these types for better IDE autocomplete and type checking:
+
+```typescript
+import {
+  WsClient,
+  WsOrderBookUpdate,
+  WsMarketStatsUpdate,
+  WsTradeUpdate
+} from '@specialjp/lighter-sdk';
+```
+
 ## Credits
 
 - Original project: [`lighter-ts`](https://github.com/bvvvp009/lighter-ts) by the Lighter Protocol community. This fork keeps the core functionality intact while polishing documentation and distribution for npm publication.
