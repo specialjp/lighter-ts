@@ -1,7 +1,6 @@
 // WebSocket-based order client for real-time order placement using Lighter WebSocket API
 import WebSocket from 'ws';
 import { EventEmitter } from 'events';
-import { performanceMonitor } from '../utils/performance-monitor';
 
 // Lighter WebSocket API interfaces based on official documentation
 export interface LighterWsSendTx {
@@ -229,30 +228,22 @@ export class WebSocketOrderClient extends EventEmitter {
       throw new Error('WebSocket not connected');
     }
 
-    const endTimer = performanceMonitor.startTimer('ws_send_tx', {
-      txType: txType.toString()
-    });
+    const requestId = `tx_${Date.now()}_${++this.messageId}`;
 
-    try {
-      const requestId = `tx_${Date.now()}_${++this.messageId}`;
-      
-      const request: WsOrderRequest = {
-        id: requestId,
-        payload: {
-          type: 'jsonapi/sendtx',
-          data: {
-            tx_type: txType,
-            tx_info: txInfo
-          }
-        },
-        timestamp: Date.now()
-      };
+    const request: WsOrderRequest = {
+      id: requestId,
+      payload: {
+        type: 'jsonapi/sendtx',
+        data: {
+          tx_type: txType,
+          tx_info: txInfo
+        }
+      },
+      timestamp: Date.now()
+    };
 
-      const result = await this.sendRequest(request);
-      return this.extractSingleTransaction(result);
-    } finally {
-      endTimer();
-    }
+    const result = await this.sendRequest(request);
+    return this.extractSingleTransaction(result);
   }
 
   async sendBatchTransactions(txTypes: number[], txInfos: string[]): Promise<LighterWsTransaction[]> {
@@ -268,30 +259,22 @@ export class WebSocketOrderClient extends EventEmitter {
       throw new Error('Batch size cannot exceed 50 transactions');
     }
 
-    const endTimer = performanceMonitor.startTimer('ws_send_batch_tx', {
-      batchSize: txTypes.length.toString()
-    });
+    const requestId = `batch_${Date.now()}_${++this.messageId}`;
 
-    try {
-      const requestId = `batch_${Date.now()}_${++this.messageId}`;
-      
-      const request: WsOrderRequest = {
-        id: requestId,
-        payload: {
-          type: 'jsonapi/sendtxbatch',
-          data: {
-            tx_types: txTypes,
-            tx_infos: txInfos
-          }
-        },
-        timestamp: Date.now()
-      };
+    const request: WsOrderRequest = {
+      id: requestId,
+      payload: {
+        type: 'jsonapi/sendtxbatch',
+        data: {
+          tx_types: txTypes,
+          tx_infos: txInfos
+        }
+      },
+      timestamp: Date.now()
+    };
 
-      const result = await this.sendRequest(request);
-      return this.extractTransactionArray(result);
-    } finally {
-      endTimer();
-    }
+    const result = await this.sendRequest(request);
+    return this.extractTransactionArray(result);
   }
 
   async batchOrders(orders: any[]): Promise<any[]> {
@@ -299,30 +282,22 @@ export class WebSocketOrderClient extends EventEmitter {
       throw new Error('WebSocket not connected');
     }
 
-    const endTimer = performanceMonitor.startTimer('ws_batch_orders', {
-      count: orders.length.toString()
-    });
+    const requestId = `batch_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
 
-    try {
-      const requestId = `batch_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-      
-      const request: WsOrderRequest = {
-        id: requestId,
-        payload: {
-          type: 'jsonapi/sendtxbatch',
-          data: {
-            tx_types: orders.map(() => 14), // TX_TYPE_CREATE_ORDER for all
-            tx_infos: orders // Assuming orders are already signed tx_infos
-          }
-        },
-        timestamp: Date.now()
-      };
+    const request: WsOrderRequest = {
+      id: requestId,
+      payload: {
+        type: 'jsonapi/sendtxbatch',
+        data: {
+          tx_types: orders.map(() => 14), // TX_TYPE_CREATE_ORDER for all
+          tx_infos: orders // Assuming orders are already signed tx_infos
+        }
+      },
+      timestamp: Date.now()
+    };
 
-      const result = await this.sendRequest(request);
-      return result;
-    } finally {
-      endTimer();
-    }
+    const result = await this.sendRequest(request);
+    return result;
   }
 
   private extractSingleTransaction(result: any): LighterWsTransaction {

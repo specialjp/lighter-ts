@@ -1173,17 +1173,17 @@ export class WasmSignerClient {
    */
   private findPackageRoot(): string | null {
     try {
-      // Try to resolve the package.json of lighter-ts-sdk
-      const packageJsonPath = require.resolve('lighter-ts-sdk/package.json');
+      // Try to resolve the package.json of @specialjp/lighter-sdk
+      const packageJsonPath = require.resolve('@specialjp/lighter-sdk/package.json');
       return require('path').dirname(packageJsonPath);
     } catch {
-      // Fallback: look for node_modules/lighter-ts-sdk in current or parent directories
+      // Fallback: look for node_modules/@specialjp/lighter-sdk in current or parent directories
       let currentDir = process.cwd();
       const maxDepth = 10; // Prevent infinite loops
       let depth = 0;
-      
+
       while (currentDir && depth < maxDepth) {
-        const packagePath = require('path').join(currentDir, 'node_modules', 'lighter-ts-sdk');
+        const packagePath = require('path').join(currentDir, 'node_modules', '@specialjp', 'lighter-sdk');
         if (fs.existsSync(packagePath)) {
           return packagePath;
         }
