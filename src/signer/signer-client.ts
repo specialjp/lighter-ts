@@ -1,6 +1,9 @@
 import { ApiClient } from '../api/api-client';
 import { TransactionApi } from '../api/transaction-api';
-import { createSignerServerClient, SignerServerClient } from '../utils/signer-server';
+import {
+  createSignerServerClient,
+  SignerServerClient,
+} from '../utils/signer-server';
 
 export interface SignerConfig {
   url: string;
@@ -54,49 +57,49 @@ export class SignerClient {
   static readonly ORDER_TIME_IN_FORCE_IMMEDIATE_OR_CANCEL = 0;
   static readonly ORDER_TIME_IN_FORCE_FILL_OR_KILL = 2;
   //static readonly DEFAULT_10_MIN_AUTH_EXPIRY = 600;
-  static readonly USDC_TICKER_SCALE = 1e6
+  static readonly USDC_TICKER_SCALE = 1e6;
 
   //tx type constants
-  static readonly TX_TYPE_CHANGE_PUB_KEY = 8
-  static readonly TX_TYPE_CREATE_SUB_ACCOUNT = 9
-  static readonly TX_TYPE_CREATE_PUBLIC_POOL = 10
-  static readonly TX_TYPE_UPDATE_PUBLIC_POOL = 11
-  static readonly TX_TYPE_TRANSFER = 12
-  static readonly TX_TYPE_WITHDRAW = 13
-  static readonly TX_TYPE_CREATE_ORDER = 14
-  static readonly TX_TYPE_CANCEL_ORDER = 15
-  static readonly TX_TYPE_CANCEL_ALL_ORDERS = 16
-  static readonly TX_TYPE_MODIFY_ORDER = 17
-  static readonly TX_TYPE_MINT_SHARES = 18
-  static readonly TX_TYPE_BURN_SHARES = 19
+  static readonly TX_TYPE_CHANGE_PUB_KEY = 8;
+  static readonly TX_TYPE_CREATE_SUB_ACCOUNT = 9;
+  static readonly TX_TYPE_CREATE_PUBLIC_POOL = 10;
+  static readonly TX_TYPE_UPDATE_PUBLIC_POOL = 11;
+  static readonly TX_TYPE_TRANSFER = 12;
+  static readonly TX_TYPE_WITHDRAW = 13;
+  static readonly TX_TYPE_CREATE_ORDER = 14;
+  static readonly TX_TYPE_CANCEL_ORDER = 15;
+  static readonly TX_TYPE_CANCEL_ALL_ORDERS = 16;
+  static readonly TX_TYPE_MODIFY_ORDER = 17;
+  static readonly TX_TYPE_MINT_SHARES = 18;
+  static readonly TX_TYPE_BURN_SHARES = 19;
 
- 
-  static readonly ORDER_TYPE_STOP_LOSS = 2
-  static readonly ORDER_TYPE_STOP_LOSS_LIMIT = 3
-  static readonly ORDER_TYPE_TAKE_PROFIT = 4
-  static readonly ORDER_TYPE_TAKE_PROFIT_LIMIT = 5
-  static readonly ORDER_TYPE_TWAP = 6
+  static readonly ORDER_TYPE_STOP_LOSS = 2;
+  static readonly ORDER_TYPE_STOP_LOSS_LIMIT = 3;
+  static readonly ORDER_TYPE_TAKE_PROFIT = 4;
+  static readonly ORDER_TYPE_TAKE_PROFIT_LIMIT = 5;
+  static readonly ORDER_TYPE_TWAP = 6;
 
- // static readonly ORDER_TIME_IN_FORCE_IMMEDIATE_OR_CANCEL = 0
-  static readonly ORDER_TIME_IN_FORCE_POST_ONLY = 2
+  // static readonly ORDER_TIME_IN_FORCE_IMMEDIATE_OR_CANCEL = 0
+  static readonly ORDER_TIME_IN_FORCE_POST_ONLY = 2;
 
-  static readonly NIL_TRIGGER_PRICE = 0
-  static readonly DEFAULT_28_DAY_ORDER_EXPIRY = -1
-  static readonly DEFAULT_IOC_EXPIRY = 0
-  static readonly DEFAULT_10_MIN_AUTH_EXPIRY = -1
-  static readonly MINUTE = 60
-
+  static readonly NIL_TRIGGER_PRICE = 0;
+  static readonly DEFAULT_28_DAY_ORDER_EXPIRY = -1;
+  static readonly DEFAULT_IOC_EXPIRY = 0;
+  static readonly DEFAULT_10_MIN_AUTH_EXPIRY = -1;
+  static readonly MINUTE = 60;
 
   constructor(config: SignerConfig) {
     this.config = config;
     this.apiClient = new ApiClient({ host: config.url });
     this.transactionApi = new TransactionApi(this.apiClient);
-    
+
     // Use signer server if URL is provided, otherwise fall back to local signer
     if (config.signerServerUrl) {
       this.wallet = createSignerServerClient({ url: config.signerServerUrl });
     } else {
-      throw new Error('Signer server URL is required. Please provide signerServerUrl in config.');
+      throw new Error(
+        'Signer server URL is required. Please provide signerServerUrl in config.'
+      );
     }
   }
 
@@ -114,7 +117,9 @@ export class SignerClient {
     return null;
   }
 
-  async createOrder(params: CreateOrderParams): Promise<[any, string, string | null]> {
+  async createOrder(
+    params: CreateOrderParams
+  ): Promise<[any, string, string | null]> {
     try {
       // Get next nonce
       const nextNonce = await this.transactionApi.getNextNonce(
@@ -135,11 +140,12 @@ export class SignerClient {
         TimeInForce: params.timeInForce,
         ReduceOnly: params.reduceOnly ? 1 : 0,
         TriggerPrice: params.triggerPrice,
-        Nonce: nextNonce.nonce
+        Nonce: nextNonce.nonce,
       };
 
       // Handle order expiry - use real timestamp for GTT orders (milliseconds)
-      const orderExpiry = params.orderExpiry ?? SignerClient.DEFAULT_28_DAY_ORDER_EXPIRY;
+      const orderExpiry =
+        params.orderExpiry ?? SignerClient.DEFAULT_28_DAY_ORDER_EXPIRY;
       if (orderExpiry !== SignerClient.DEFAULT_28_DAY_ORDER_EXPIRY) {
         orderTx.OrderExpiry = orderExpiry;
         orderTx.ExpiredAt = orderExpiry;
@@ -147,7 +153,7 @@ export class SignerClient {
 
       // Sign the transaction
       const signature = await this.signTransaction(orderTx);
-      
+
       // Create the final transaction info with signature
       const txInfo = {
         ...orderTx,
@@ -162,7 +168,11 @@ export class SignerClient {
 
       return [orderTx, txHash.hash || '', null];
     } catch (error) {
-      return [null, '', error instanceof Error ? error.message : 'Unknown error'];
+      return [
+        null,
+        '',
+        error instanceof Error ? error.message : 'Unknown error',
+      ];
     }
   }
 
@@ -192,7 +202,7 @@ export class SignerClient {
 
       // Sign the transaction
       const signature = await this.signTransaction(orderTx);
-      
+
       // Create the final transaction info with signature
       const txInfo = {
         ...orderTx,
@@ -211,7 +221,9 @@ export class SignerClient {
     }
   }
 
-  async cancelOrder(params: CancelOrderParams): Promise<[any, string, string | null]> {
+  async cancelOrder(
+    params: CancelOrderParams
+  ): Promise<[any, string, string | null]> {
     try {
       // Get next nonce
       const nextNonce = await this.transactionApi.getNextNonce(
@@ -230,7 +242,7 @@ export class SignerClient {
 
       // Sign the transaction
       const signature = await this.signTransaction(cancelTx);
-      
+
       // Create the final transaction info with signature
       const txInfo = {
         ...cancelTx,
@@ -245,11 +257,17 @@ export class SignerClient {
 
       return [cancelTx, txHash.hash || '', null];
     } catch (error) {
-      return [null, '', error instanceof Error ? error.message : 'Unknown error'];
+      return [
+        null,
+        '',
+        error instanceof Error ? error.message : 'Unknown error',
+      ];
     }
   }
 
-  async changeApiKey(params: ChangeApiKeyParams): Promise<[any, string | null]> {
+  async changeApiKey(
+    params: ChangeApiKeyParams
+  ): Promise<[any, string | null]> {
     try {
       // Get next nonce
       const nextNonce = await this.transactionApi.getNextNonce(
@@ -266,7 +284,7 @@ export class SignerClient {
 
       // Sign the transaction
       const signature = await this.signTransaction(changeTx);
-      
+
       // Send transaction
       const txHash = await this.transactionApi.sendTransaction({
         account_index: this.config.accountIndex,
@@ -280,14 +298,21 @@ export class SignerClient {
     }
   }
 
-  async createAuthTokenWithExpiry(expiry: number): Promise<[string, string | null]> {
+  async createAuthTokenWithExpiry(
+    expiry: number
+  ): Promise<[string, string | null]> {
     try {
       const timestamp = Math.floor(Date.now() / 1000);
-      const message = `${this.config.accountIndex}:${this.config.apiKeyIndex}:${timestamp + expiry}`;
-      
+      const message = `${this.config.accountIndex}:${this.config.apiKeyIndex}:${
+        timestamp + expiry
+      }`;
+
       // Sign the message using the signer server
-      const signature = await this.wallet.signTransaction(this.config.privateKey, { message });
-      
+      const signature = await this.wallet.signTransaction(
+        this.config.privateKey,
+        { message }
+      );
+
       return [signature, null];
     } catch (error) {
       return ['', error instanceof Error ? error.message : 'Unknown error'];
@@ -296,10 +321,13 @@ export class SignerClient {
 
   private async signTransaction(transaction: any): Promise<string> {
     // Use the signer server to sign the transaction
-    return await this.wallet.signTransaction(this.config.privateKey, transaction);
+    return await this.wallet.signTransaction(
+      this.config.privateKey,
+      transaction
+    );
   }
 
   async close(): Promise<void> {
     await this.apiClient.close();
   }
-} 
+}

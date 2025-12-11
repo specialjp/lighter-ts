@@ -2,7 +2,6 @@ import { ApiClient } from './api-client';
 import {
   TradeParams,
   CreateOrderParams,
-  CancelOrderParams,
   PaginationParams,
   OrderBookDetailsParams,
   OrderBookOrdersParams,
@@ -219,38 +218,6 @@ export class OrderApi {
       time_in_force: params.time_in_force,
       client_order_id: params.client_order_id,
     });
-    return response.data;
-  }
-
-  public async cancelOrder(
-    params: CancelOrderParams
-  ): Promise<{ success: boolean }> {
-    const response = await this.client.delete<{ success: boolean }>(
-      '/api/v1/orders',
-      {
-        params: {
-          market_id: params.market_id,
-          order_id: params.order_id,
-        },
-      }
-    );
-    return response.data;
-  }
-
-  public async cancelAllOrders(
-    marketId?: number
-  ): Promise<{ success: boolean }> {
-    const params: any = {};
-    if (marketId !== undefined) {
-      params.market_id = marketId;
-    }
-
-    const response = await this.client.delete<{ success: boolean }>(
-      '/api/v1/orders/all',
-      {
-        params,
-      }
-    );
     return response.data;
   }
 }

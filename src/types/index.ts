@@ -81,11 +81,6 @@ export interface CreateOrderParams {
   client_order_id?: string;
 }
 
-export interface CancelOrderParams {
-  market_id: number;
-  order_id: string;
-}
-
 export interface SendTransactionParams {
   account_index: number;
   api_key_index: number;
