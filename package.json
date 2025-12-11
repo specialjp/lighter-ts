@@ -1,6 +1,6 @@
 {
-  "name": "lighter-ts-sdk",
-  "version": "1.0.7",
+  "name": "@specialjp/lighter-sdk",
+  "version": "1.0.10",
   "description": "TypeScript SDK for Lighter Protocol Unofficial - Trade perpetuals with unmatched efficiency and fairness on Lighter ",
   "type": "commonjs",
   "main": "dist/index.js",
@@ -40,12 +40,12 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/bvvvp009/lighter-ts.git"
+    "url": "https://github.com/specialjp/lighter-ts.git"
   },
   "bugs": {
-    "url": "https://github.com/bvvvp009/lighter-ts/issues"
+    "url": "https://github.com/specialjp/lighter-ts/issues"
   },
-  "homepage": "https://github.com/bvvvp009/lighter-ts#readme",
+  "homepage": "https://github.com/specialjp/lighter-ts#readme",
   "dependencies": {
     "axios": "^1.6.0",
     "dotenv": "^17.2.0",
@@ -54,7 +54,7 @@
   },
   "devDependencies": {
     "@types/jest": "^30.0.0",
-    "@types/node": "^20.0.0",
+    "@types/node": "^20.19.23",
     "@types/ws": "^8.5.0",
     "@typescript-eslint/eslint-plugin": "^6.0.0",
     "@typescript-eslint/parser": "^6.0.0",
@@ -70,5 +70,8 @@
   },
   "engines": {
     "node": ">=16.0.0"
+  },
+  "publishConfig": {
+    "access": "public"
   }
 }

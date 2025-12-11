@@ -1,7 +1,7 @@
 // WebSocket-based order client for real-time order placement using Lighter WebSocket API
 import WebSocket from 'ws';
 import { EventEmitter } from 'events';
-// Performance monitoring removed
+import { performanceMonitor } from '../utils/performance-monitor';
 
 // Lighter WebSocket API interfaces based on official documentation
 export interface LighterWsSendTx {
@@ -15,8 +15,8 @@ export interface LighterWsSendTx {
 export interface LighterWsSendBatchTx {
   type: 'jsonapi/sendtxbatch';
   data: {
-    tx_types: string; // JSON stringified array of transaction types (like REST API)
-    tx_infos: string; // JSON stringified array of transaction infos (like REST API)
+    tx_types: number[];
+    tx_infos: string[]; // Array of JSON strings from WASM signer
   };
 }
 
@@ -40,28 +40,23 @@ export interface LighterWsTransaction {
 
 export interface WsOrderRequest {
   id: string;
-  type: 'SEND_TX' | 'SEND_BATCH_TX';
-  data: LighterWsSendTx | LighterWsSendBatchTx;
+  payload: LighterWsSendTx | LighterWsSendBatchTx;
   timestamp: number;
 }
 
 export interface WsOrderResponse {
   id?: string;
-  success: boolean;
+  success?: boolean;
   result?: LighterWsTransaction | LighterWsTransaction[];
+  transaction?: LighterWsTransaction;
   error?: string;
-  timestamp: number;
+  timestamp?: number;
   type?: string;
+  data?: any;
 }
 
 export interface WsConnectionConfig {
   url: string;
-  /**
-   * WebSocket endpoint path used for order/transaction JSON API.
-   * Many deployments expose market data at `/stream` and JSON TX API at `/jsonapi`.
-   * Default: `/jsonapi`
-   */
-  endpointPath?: string;
   reconnectInterval?: number;
   maxReconnectAttempts?: number;
   heartbeatInterval?: number;
@@ -90,7 +85,6 @@ export class WebSocketOrderClient extends EventEmitter {
       maxReconnectAttempts: 10,
       heartbeatInterval: 30000,
       timeout: 10000,
-      endpointPath: '/jsonapi',
       ...config
     };
   }
@@ -98,108 +92,43 @@ export class WebSocketOrderClient extends EventEmitter {
   async connect(): Promise<void> {
     return new Promise((resolve, reject) => {
       try {
-        // Build WebSocket URL candidates:
-        // - If url is already ws(s)://, treat it as full WS URL (no extra path)
-        // - Else, if endpointPath explicitly provided: use only that
-        // - Else, try `/jsonapi` then fall back to `/stream`
-        const isWsUrl = this.config.url.startsWith('ws://') || this.config.url.startsWith('wss://');
-        const base = isWsUrl
-          ? this.config.url.replace(/\/+$/, '')
-          : this.config.url.replace('https://', 'wss://').replace('http://', 'ws://').replace(/\/+$/, '');
-        const normalizePath = (p: string) => (p.startsWith('/') ? p : `/${p}`);
-        const explicitPath = isWsUrl
-          ? '' // already a complete ws URL
-          : (this.config.endpointPath ? normalizePath(this.config.endpointPath) : undefined);
-        const candidates = explicitPath !== undefined ? [explicitPath] : (isWsUrl ? [''] : ['/jsonapi', '/stream']);
+        // Use the official Lighter WebSocket endpoint
+        const wsUrl = this.config.url.replace('https://', 'wss://').replace('http://', 'ws://') + '/stream';
+        this.ws = new WebSocket(wsUrl);
 
-        let attemptIndex = 0;
-        const attemptConnect = () => {
-          const path = candidates[attemptIndex];
-          const wsUrl = `${base}${path}`;
-          this.ws = new WebSocket(wsUrl);
+        this.ws.on('open', () => {
+          this.isConnected = true;
+          this.reconnectAttempts = 0;
+          this.startHeartbeat();
+          this.emit('connected');
+          resolve();
+        });
 
-          const handleOpen = () => {
-            this.isConnected = true;
-            this.reconnectAttempts = 0;
-            this.startHeartbeat();
-            this.emit('connected');
-            cleanupListeners();
-            resolve();
-          };
+        this.ws.on('message', (data: WebSocket.Data) => {
+          this.handleMessage(data);
+        });
 
-          const handleMessage = (data: WebSocket.Data) => {
-            this.handleMessage(data);
-          };
+        this.ws.on('error', (error: Error) => {
+          this.emit('error', error);
+          if (!this.isConnected) {
+            reject(error);
+          }
+        });
 
-          const handleError = (error: Error) => {
-            // Check for 404 errors in multiple formats
-            const errorMsg = error.message || String(error);
-            const errorCode = (error as any).code;
-            const is404 = errorMsg.includes('404') || 
-                         errorMsg.includes('Unexpected server response: 404') ||
-                         errorCode === 404 ||
-                         errorMsg.includes('Not Found');
-            
-            // If not connected and 404 occurred, try next candidate when endpointPath not explicitly set
-            const canFallback = !explicitPath && is404 && attemptIndex < candidates.length - 1;
-            if (canFallback) {
-              attemptIndex += 1;
-              // Close current socket if any and try next
-              try { 
-                if (this.ws) {
-                  this.ws.removeAllListeners();
-                  this.ws.terminate();
-                  this.ws = null;
-                }
-              } catch {}
-              // Small delay before retry
-              setTimeout(() => attemptConnect(), 100);
-              return;
-            }
-            this.emit('error', error);
-            if (!this.isConnected) {
-              cleanupListeners();
-              reject(error);
-            }
-          };
+        this.ws.on('close', (code: number, reason: string) => {
+          this.isConnected = false;
+          this.stopHeartbeat();
+          this.emit('disconnected', { code, reason });
+          this.scheduleReconnect();
+        });
 
-          const handleClose = (code: number, reason: string) => {
-            this.isConnected = false;
-            this.stopHeartbeat();
-            this.emit('disconnected', { code, reason });
-            cleanupListeners();
-            this.scheduleReconnect();
-          };
-
-          const cleanupListeners = () => {
-            if (!this.ws) return;
-            this.ws.removeListener('open', handleOpen);
-            this.ws.removeListener('message', handleMessage);
-            this.ws.removeListener('error', handleError);
-            this.ws.removeListener('close', handleClose);
-          };
-
-          this.ws.on('open', handleOpen);
-          this.ws.on('message', handleMessage);
-          this.ws.on('error', handleError);
-          this.ws.on('close', handleClose);
-
-          // Connection timeout per attempt
-          setTimeout(() => {
-            if (!this.isConnected && this.ws?.readyState !== WebSocket.OPEN) {
-              try { this.ws?.terminate(); } catch {}
-              if (!explicitPath && attemptIndex < candidates.length - 1) {
-                attemptIndex += 1;
-                attemptConnect();
-              } else {
-                cleanupListeners();
-                reject(new Error('WebSocket connection timeout'));
-              }
-            }
-          }, this.config.timeout);
-        };
-
-        attemptConnect();
+        // Connection timeout
+        setTimeout(() => {
+          if (!this.isConnected) {
+            this.ws?.terminate();
+            reject(new Error('WebSocket connection timeout'));
+          }
+        }, this.config.timeout);
 
       } catch (error) {
         reject(error);
@@ -209,92 +138,58 @@ export class WebSocketOrderClient extends EventEmitter {
 
   private handleMessage(data: WebSocket.Data): void {
     try {
-      const message = JSON.parse(data.toString());
-      
-      // Debug: log received messages
-      if (process.env.DEBUG_WS) {
-        console.log('[WS DEBUG] Pending requests:', Array.from(this.pendingRequests.keys()));
-        console.log('[WS DEBUG] Message type:', message.type || 'unknown');
-      }
-      
+      const response: WsOrderResponse = JSON.parse(data.toString());
+
+      const responseType = typeof response.type === 'string' ? response.type.toUpperCase() : undefined;
+
       // Handle heartbeat response
-      if (message.type === 'PONG' || message.type === 'pong') {
+      if (responseType === 'PONG') {
         return;
       }
 
-      // Handle error responses (may or may not have id)
-      if (message.error) {
-        const errorMsg = typeof message.error === 'object' 
-          ? message.error.message || JSON.stringify(message.error)
-          : message.error;
-        const errorCode = message.error?.code || 'UNKNOWN';
-        
-        // Try to match with pending request by id
-        if (message.id) {
-          const pending = this.pendingRequests.get(message.id);
-          if (pending) {
-            clearTimeout(pending.timeout);
-            this.pendingRequests.delete(message.id);
-            pending.reject(new Error(`[${errorCode}] ${errorMsg}`));
-            return;
-          }
-        }
-        
-        // If no id, try to match with oldest pending request
-        if (this.pendingRequests.size > 0) {
-          const oldestKey = Array.from(this.pendingRequests.keys())[0];
-          const oldestRequest = this.pendingRequests.get(oldestKey)!;
-          clearTimeout(oldestRequest.timeout);
-          this.pendingRequests.delete(oldestKey);
-          oldestRequest.reject(new Error(`[${errorCode}] ${errorMsg}`));
+      const dataPayload = typeof response.data === 'object' && response.data !== null ? response.data : undefined;
+      const responseId = response.id ?? (dataPayload && typeof dataPayload.id === 'string' ? dataPayload.id : undefined);
+
+      if (responseId) {
+        const pending = this.pendingRequests.get(responseId);
+
+        if (!pending) {
+          this.emit('response', response);
           return;
         }
-        
-        // No pending requests, emit as error event
-        this.emit('error', new Error(`[${errorCode}] ${errorMsg}`));
+
+        clearTimeout(pending.timeout);
+        this.pendingRequests.delete(responseId);
+
+        const errorMessage = response.error
+          ?? (dataPayload && typeof dataPayload.error === 'string' ? dataPayload.error : undefined);
+
+        if (errorMessage) {
+          pending.reject(new Error(errorMessage));
+          return;
+        }
+
+        const successFlag = response.success
+          ?? (dataPayload && typeof dataPayload.success === 'boolean' ? dataPayload.success : undefined);
+
+        if (successFlag === false) {
+          pending.reject(new Error('WebSocket request returned unsuccessful status'));
+          return;
+        }
+
+        const result =
+          response.result ??
+          (dataPayload && dataPayload.result !== undefined ? dataPayload.result : undefined) ??
+          (dataPayload && dataPayload.transaction !== undefined ? dataPayload.transaction : undefined) ??
+          dataPayload ??
+          response;
+
+        pending.resolve(result);
+
         return;
-      }
-
-      // Handle order response - check if it has an id field for request matching
-      if (message.id) {
-        const pending = this.pendingRequests.get(message.id);
-        if (pending) {
-          clearTimeout(pending.timeout);
-          this.pendingRequests.delete(message.id);
-
-          // Check if response has success/error structure or is direct transaction result
-          if ('success' in message) {
-            if (message.success) {
-              pending.resolve(message.result);
-            } else {
-              pending.reject(new Error(message.error || 'Unknown error'));
-            }
-          } else if ('hash' in message) {
-            // Direct transaction result (LighterWsTransaction)
-            pending.resolve(message);
-          } else if (Array.isArray(message) && message.length > 0 && 'hash' in message[0]) {
-            // Array of transaction results (batch)
-            pending.resolve(message);
-          } else {
-            // Unknown format, resolve with the message itself
-            pending.resolve(message);
-          }
-        }
-      } else if ('hash' in message || (Array.isArray(message) && message.length > 0 && 'hash' in message[0])) {
-        // Transaction result without id - try to match with oldest pending request
-        // This handles cases where server doesn't echo back the id
-        if (this.pendingRequests.size > 0) {
-          const oldestKey = Array.from(this.pendingRequests.keys())[0];
-          const oldestRequest = this.pendingRequests.get(oldestKey)!;
-          clearTimeout(oldestRequest.timeout);
-          this.pendingRequests.delete(oldestKey);
-          oldestRequest.resolve(message);
-        } else {
-          this.emit('response', message);
-        }
       } else {
         // Emit unhandled responses
-        this.emit('response', message);
+        this.emit('response', response);
       }
     } catch (error) {
       // Silently ignore parse errors
@@ -334,15 +229,16 @@ export class WebSocketOrderClient extends EventEmitter {
       throw new Error('WebSocket not connected');
     }
 
-    // Performance monitoring removed
+    const endTimer = performanceMonitor.startTimer('ws_send_tx', {
+      txType: txType.toString()
+    });
 
     try {
       const requestId = `tx_${Date.now()}_${++this.messageId}`;
       
       const request: WsOrderRequest = {
         id: requestId,
-        type: 'SEND_TX',
-        data: {
+        payload: {
           type: 'jsonapi/sendtx',
           data: {
             tx_type: txType,
@@ -353,8 +249,9 @@ export class WebSocketOrderClient extends EventEmitter {
       };
 
       const result = await this.sendRequest(request);
-      return result as LighterWsTransaction;
+      return this.extractSingleTransaction(result);
     } finally {
+      endTimer();
     }
   }
 
@@ -371,27 +268,29 @@ export class WebSocketOrderClient extends EventEmitter {
       throw new Error('Batch size cannot exceed 50 transactions');
     }
 
-    // Performance monitoring removed
+    const endTimer = performanceMonitor.startTimer('ws_send_batch_tx', {
+      batchSize: txTypes.length.toString()
+    });
 
     try {
       const requestId = `batch_${Date.now()}_${++this.messageId}`;
       
       const request: WsOrderRequest = {
         id: requestId,
-        type: 'SEND_BATCH_TX',
-        data: {
+        payload: {
           type: 'jsonapi/sendtxbatch',
           data: {
-            tx_types: JSON.stringify(txTypes), // Server expects JSON string like REST API
-            tx_infos: JSON.stringify(txInfos)  // Server expects JSON string like REST API
+            tx_types: txTypes,
+            tx_infos: txInfos
           }
         },
         timestamp: Date.now()
       };
 
       const result = await this.sendRequest(request);
-      return result as LighterWsTransaction[];
+      return this.extractTransactionArray(result);
     } finally {
+      endTimer();
     }
   }
 
@@ -400,20 +299,20 @@ export class WebSocketOrderClient extends EventEmitter {
       throw new Error('WebSocket not connected');
     }
 
-    // Performance monitoring removed
+    const endTimer = performanceMonitor.startTimer('ws_batch_orders', {
+      count: orders.length.toString()
+    });
 
     try {
       const requestId = `batch_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
       
       const request: WsOrderRequest = {
         id: requestId,
-        type: 'SEND_BATCH_TX',
-        data: {
+        payload: {
           type: 'jsonapi/sendtxbatch',
           data: {
-            // Server expects JSON string for both fields (same as REST form encoding)
-            tx_types: JSON.stringify(orders.map(() => 14)), // TX_TYPE_CREATE_ORDER for all
-            tx_infos: JSON.stringify(orders) // Assuming orders are already signed tx_info strings
+            tx_types: orders.map(() => 14), // TX_TYPE_CREATE_ORDER for all
+            tx_infos: orders // Assuming orders are already signed tx_infos
           }
         },
         timestamp: Date.now()
@@ -422,7 +321,40 @@ export class WebSocketOrderClient extends EventEmitter {
       const result = await this.sendRequest(request);
       return result;
     } finally {
+      endTimer();
     }
+  }
+
+  private extractSingleTransaction(result: any): LighterWsTransaction {
+    if (result && typeof result === 'object') {
+      if ('transaction' in result && result.transaction) {
+        return result.transaction as LighterWsTransaction;
+      }
+
+      if ('result' in result && !Array.isArray(result.result)) {
+        return result.result as LighterWsTransaction;
+      }
+    }
+
+    return result as LighterWsTransaction;
+  }
+
+  private extractTransactionArray(result: any): LighterWsTransaction[] {
+    if (Array.isArray(result)) {
+      return result as LighterWsTransaction[];
+    }
+
+    if (result && typeof result === 'object') {
+      if (Array.isArray((result as any).transactions)) {
+        return (result as any).transactions as LighterWsTransaction[];
+      }
+
+      if (Array.isArray((result as any).result)) {
+        return (result as any).result as LighterWsTransaction[];
+      }
+    }
+
+    return result as LighterWsTransaction[];
   }
 
   private sendRequest(request: WsOrderRequest): Promise<any> {
@@ -438,77 +370,23 @@ export class WebSocketOrderClient extends EventEmitter {
         resolve,
         reject,
         timeout,
-        timestamp: Date.now()
+        timestamp: request.timestamp
       });
 
-      // Send request - server expects the message in the format: { type: 'jsonapi/sendtx', data: { id, tx_type, tx_info } }
-      // Note: id goes INSIDE data, and tx_info should be parsed JSON object (not string)
+      // Send request
       try {
-        const dataPayload: any = {
-          id: request.id, // ID goes INSIDE data object
-          ...(request.data as any).data
+        const wireMessage: any = {
+          type: request.payload.type,
+          data: {
+            ...(request.payload.data as Record<string, any>)
+          }
         };
-        
-        // Parse tx_info from JSON string to object if needed
-        if (dataPayload.tx_info) {
-          if (typeof dataPayload.tx_info === 'string') {
-            try {
-              const parsed = JSON.parse(dataPayload.tx_info);
-              dataPayload.tx_info = parsed;
-              if (process.env.DEBUG_WS) {
-                console.log('[WS DEBUG] Parsed tx_info from string to object');
-              }
-            } catch (e) {
-              // If parsing fails, keep as string
-              if (process.env.DEBUG_WS) {
-                console.warn('[WS DEBUG] Failed to parse tx_info as JSON:', e);
-              }
-            }
-          } else if (process.env.DEBUG_WS) {
-            console.log('[WS DEBUG] tx_info is already an object');
-          }
+
+        if (wireMessage.data && wireMessage.data.id === undefined) {
+          wireMessage.data.id = request.id;
         }
-        
-        // Parse tx_infos array from JSON strings to objects (for batch)
-        if (dataPayload.tx_infos && typeof dataPayload.tx_infos === 'string') {
-          try {
-            const parsed = JSON.parse(dataPayload.tx_infos);
-            if (Array.isArray(parsed)) {
-              dataPayload.tx_infos = parsed.map((ti: string) => {
-                try {
-                  return typeof ti === 'string' ? JSON.parse(ti) : ti;
-                } catch {
-                  return ti;
-                }
-              });
-            }
-          } catch (e) {
-            // If parsing fails, keep as string
-          }
-        }
-        
-        const messageToSend: any = {
-          type: request.data.type,
-          data: dataPayload
-        };
-        const messageStr = JSON.stringify(messageToSend);
-        // Debug: log the message being sent (truncate tx_info for readability)
-        if (process.env.DEBUG_WS) {
-          const debugMsg = JSON.parse(messageStr);
-          if (debugMsg.data?.tx_info) {
-            const txInfoStr = typeof debugMsg.data.tx_info === 'string' 
-              ? debugMsg.data.tx_info 
-              : JSON.stringify(debugMsg.data.tx_info);
-            debugMsg.data.tx_info = txInfoStr.substring(0, 100) + '...';
-          }
-          if (debugMsg.data?.tx_infos) {
-            debugMsg.data.tx_infos = debugMsg.data.tx_infos.map((ti: any) => {
-              const tiStr = typeof ti === 'string' ? ti : JSON.stringify(ti);
-              return tiStr.substring(0, 100) + '...';
-            });
-          }
-        }
-        this.ws!.send(messageStr);
+
+        this.ws!.send(JSON.stringify(wireMessage));
       } catch (error) {
         clearTimeout(timeout);
         this.pendingRequests.delete(request.id);
@@ -527,7 +405,7 @@ export class WebSocketOrderClient extends EventEmitter {
       this.stopHeartbeat();
 
       // Reject all pending requests
-      for (const [, pending] of Array.from(this.pendingRequests.entries())) {
+      for (const [, pending] of this.pendingRequests.entries()) {
         clearTimeout(pending.timeout);
         pending.reject(new Error('WebSocket disconnected'));
       }

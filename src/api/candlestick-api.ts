@@ -24,13 +24,15 @@ export class CandlestickApi {
     this.client = client;
   }
 
-  async getCandlesticks(query: CandlestickQuery): Promise<{ candlesticks: Candlestick[] }> {
-    const response = await this.client.get(`/candlesticks`, { params: query });
+  async getCandlesticks(
+    query: CandlestickQuery
+  ): Promise<{ candlesticks: Candlestick[] }> {
+    const response = await this.client.get(`/api/v1/candlesticks`, query);
     return response.data;
   }
 
   async getFundings(query: FundingQuery): Promise<{ fundings: Funding[] }> {
-    const response = await this.client.get(`/fundings`, { params: query });
+    const response = await this.client.get(`/api/v1//fundings`, query);
     return response.data;
   }
-} 
+}

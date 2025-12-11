@@ -1,37 +1,52 @@
 import { ApiClient } from './api-client';
-import { AccountParams, PaginationParams } from '../types';
-
-export interface SubAccount {
-  index: string;
-  l1_address: string;
-  l2_address: string;
-}
-
-export interface Account {
-  index: string;
-  l1_address: string;
-  l2_address: string;
-  nonce: string;
-  balance: string;
-  margin_balance: string;
-  free_margin: string;
-  margin_used: string;
-  margin_ratio: string;
-  sub_accounts?: SubAccount[];  // List of subaccounts under this master account
-  positions: AccountPosition[];
-  orders: Order[];
-  trades: Trade[];
-}
 
 export interface AccountPosition {
   market_id: number;
-  side: 'long' | 'short';
-  size: string;
-  entry_price: string;
-  mark_price: string;
+  symbol: string;
+  initial_margin_fraction: string;
+  open_order_count: number;
+  pending_order_count: number;
+  position_tied_order_count: number;
+  sign: number;
+  position: string;
+  avg_entry_price: string;
+  position_value: string;
   unrealized_pnl: string;
   realized_pnl: string;
-  margin_used: string;
+  liquidation_price: string;
+  margin_mode: number;
+  allocated_margin: string;
+}
+
+export interface Account {
+  code: number;
+  account_type: number;
+  index: number;
+  l1_address: string;
+  cancel_all_time: number;
+  total_order_count: number;
+  total_isolated_order_count: number;
+  pending_order_count: number;
+  available_balance: string;
+  status: number;
+  collateral: string;
+  account_index: number;
+  name: string;
+  description: string;
+  can_invite: boolean;
+  referral_points_percentage: string;
+  positions: AccountPosition[];
+  total_asset_value: string;
+  cross_asset_value: string;
+  shares: any[];
+}
+
+export type AccountResponse = GetAccountResponse;
+
+export interface GetAccountResponse {
+  code: number;
+  total: number;
+  accounts: Account[];
 }
 
 export interface Order {
@@ -85,28 +100,27 @@ export interface PublicPoolShare {
   value: string;
 }
 
-export interface FeeBucket {
-  account_index: number;
-  fee_bucket: string;
-  fee_bucket_tier?: string;
-  [key: string]: any; // Allow for additional fields
+export interface GetPnLParams {
+  by: string;
+  value: string;
+  resolution: string;
+  startTimestamp: number;
+  endTimestamp: number;
+  countBack: number;
+  authorization?: string;
+  auth?: string;
+  ignoreTransfers?: boolean;
 }
 
 export interface PnLEntry {
-  account_index: number;
-  market_id?: number;
   timestamp: number;
-  realized_pnl: string;
-  unrealized_pnl?: string;
-  total_pnl?: string;
-  [key: string]: any; // Allow for additional fields
+  pnl: string;
+  cumulative_pnl: string;
 }
 
-export interface PnLResponse {
-  entries?: PnLEntry[];
-  total_realized_pnl?: string;
-  total_unrealized_pnl?: string;
-  [key: string]: any; // Allow for additional fields
+export interface AccountPnL {
+  code: number;
+  entries: PnLEntry[];
 }
 
 export class AccountApi {
@@ -116,27 +130,36 @@ export class AccountApi {
     this.client = client;
   }
 
-  public async getAccount(params: AccountParams): Promise<Account> {
-    const response = await this.client.get<Account>('/api/v1/account', {
-      by: params.by,
-      value: params.value,
-    });
+  public async getAccount(params: {
+    by: string;
+    value: string;
+  }): Promise<GetAccountResponse> {
+    const response = await this.client.get<GetAccountResponse>(
+      '/api/v1/account',
+      {
+        by: params.by,
+        value: params.value,
+      }
+    );
     return response.data;
   }
 
-  public async getAccounts(params?: PaginationParams): Promise<Account[]> {
-    const response = await this.client.get<Account[]>('/api/v1/accounts', params);
+  public async getAccountsByL1Address(
+    l1Address: string
+  ): Promise<GetAccountResponse> {
+    const response = await this.client.get<GetAccountResponse>(
+      '/api/v1/accountsByL1Address',
+      {
+        l1_address: l1Address,
+      }
+    );
     return response.data;
   }
 
-  public async getAccountsByL1Address(l1Address: string): Promise<Account[]> {
-    const response = await this.client.get<Account[]>('/api/v1/accountsByL1Address', {
-      l1_address: l1Address,
-    });
-    return response.data;
-  }
-
-  public async getApiKeys(accountIndex: number, apiKeyIndex: number): Promise<AccountApiKeys> {
+  public async getApiKeys(
+    accountIndex: number,
+    apiKeyIndex: number
+  ): Promise<AccountApiKeys> {
     const response = await this.client.get<AccountApiKeys>('/api/v1/apikeys', {
       account_index: accountIndex,
       api_key_index: apiKeyIndex,
@@ -144,47 +167,43 @@ export class AccountApi {
     return response.data;
   }
 
-  public async getFeeBucket(accountIndex: number): Promise<FeeBucket> {
-    const response = await this.client.get<FeeBucket>('/api/v1/feeBucket', {
-      account_index: accountIndex,
-    });
+  public async getPnL(params: GetPnLParams): Promise<AccountPnL> {
+    const queryParams = {
+      by: params.by,
+      value: params.value,
+      resolution: params.resolution,
+      start_timestamp: params.startTimestamp,
+      end_timestamp: params.endTimestamp,
+      count_back: params.countBack,
+      ...(params.auth && { auth: params.auth }),
+      ...(params.ignoreTransfers !== undefined && { ignore_transfers: params.ignoreTransfers }),
+    };
+
+    const config = params.authorization
+      ? { headers: { Authorization: params.authorization } }
+      : undefined;
+
+    const response = await this.client.get<AccountPnL>(
+      '/api/v1/pnl',
+      queryParams,
+      config
+    );
     return response.data;
   }
 
-  public async isWhitelisted(accountIndex: number): Promise<{ is_whitelisted: boolean }> {
-    const response = await this.client.get<{ is_whitelisted: boolean }>('/api/v1/isWhitelisted', {
-      account_index: accountIndex,
-    });
-    return response.data;
-  }
-
-  public async getPnL(accountIndex: number, params?: { start_time?: number; end_time?: number }): Promise<PnLResponse> {
-    const response = await this.client.get<PnLResponse>('/api/v1/pnl', {
-      account_index: accountIndex,
-      ...params,
-    });
-    return response.data;
-  }
-
-  public async getPublicPools(filter: string = 'all', limit: number = 10, index: number = 0): Promise<PublicPool[]> {
-    const response = await this.client.get<PublicPool[]>('/api/v1/publicPools', {
-      filter,
-      limit,
-      index,
-    });
-    return response.data;
-  }
-
-  public async changeAccountTier(accountIndex: number, newTier: string, auth: string): Promise<any> {
-    // Use form data as the API expects multipart/form-data
-    const params = new URLSearchParams();
-    params.append('account_index', accountIndex.toString());
-    params.append('new_tier', newTier);
-    params.append('auth', auth);
-
-    const response = await this.client.post('/api/v1/changeAccountTier', params, {
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    });
+  public async getPublicPools(
+    filter: string = 'all',
+    limit: number = 10,
+    index: number = 0
+  ): Promise<PublicPool[]> {
+    const response = await this.client.get<PublicPool[]>(
+      '/api/v1/publicPools',
+      {
+        filter,
+        limit,
+        index,
+      }
+    );
     return response.data;
   }
 }
