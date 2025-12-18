@@ -58,19 +58,20 @@ export async function checkOrderStatus(
   
   // Check active orders first (open/pending)
   try {
-    const activeOrders = await orderApi.getAccountActiveOrders(accountIndex, marketId, auth);
-    
+    const activeOrdersResponse = await orderApi.getAccountActiveOrders(accountIndex, marketId, auth);
+    const activeOrders = activeOrdersResponse.orders || [];
+
     for (const order of activeOrders) {
-      const orderClientIndex = order.client_order_id || order.id;
+      const orderClientIndex = order.client_order_id || order.order_id;
       const targetIndex = clientOrderIndex.toString();
 
-      if (orderClientIndex === targetIndex || order.id === targetIndex) {
+      if (orderClientIndex === targetIndex || order.order_id === targetIndex) {
         return {
           found: true,
           status: order.status || 'active',
           reason: getCancelReason(order.status || 'active'),
-          remainingAmount: order.remaining_size || '0',
-          filledAmount: order.filled_size || '0',
+          remainingAmount: order.remaining_base_amount || '0',
+          filledAmount: order.filled_base_amount || '0',
           order
         };
       }
@@ -82,18 +83,18 @@ export async function checkOrderStatus(
   // Check inactive orders (filled/cancelled)
   try {
     const inactiveOrders = await orderApi.getAccountInactiveOrders(accountIndex, 20, auth, marketId);
-    
+
     for (const order of inactiveOrders) {
-      const orderClientIndex = order.client_order_id || order.id;
+      const orderClientIndex = order.client_order_id || order.order_id;
       const targetIndex = clientOrderIndex.toString();
 
-      if (orderClientIndex === targetIndex || order.id === targetIndex) {
+      if (orderClientIndex === targetIndex || order.order_id === targetIndex) {
         return {
           found: true,
           status: order.status || 'unknown',
           reason: getCancelReason(order.status || 'unknown'),
-          filledAmount: order.filled_size || '0',
-          remainingAmount: order.remaining_size || '0',
+          filledAmount: order.filled_base_amount || '0',
+          remainingAmount: order.remaining_base_amount || '0',
           order
         };
       }

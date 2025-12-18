@@ -3,7 +3,10 @@ import {
   TradeParams,
   OrderBookDetailsParams,
   OrderBookOrdersParams,
+  Orders,
+  Order,
 } from "../types";
+import JSONbig from "json-bigint";
 
 export interface OrderBook {
   market_id: number;
@@ -77,20 +80,8 @@ export interface OrderBookOrdersResponse {
 
 export type OrderBookOrders = OrderBookOrdersResponse;
 
-export interface Order {
-  id: string;
-  market_id: number;
-  side: "buy" | "sell";
-  type: "limit" | "market";
-  size: string;
-  price: string;
-  filled_size: string;
-  remaining_size: string;
-  status: "open" | "filled" | "cancelled" | "rejected";
-  created_at: string;
-  updated_at: string;
-  client_order_id?: string;
-}
+// Re-export Order type from OpenAPI for backward compatibility
+export type { Order };
 
 export interface Trade {
   id: string;
@@ -171,16 +162,25 @@ export class OrderApi {
       {
         market_id: params.market_id,
         ...(params.limit !== undefined ? { limit: params.limit } : {}),
+      },
+      {
+        transformResponse: [(data) => JSONbig.parse(data)],
       }
     );
     return response.data;
   }
 
   public async getRecentTrades(params: TradeParams): Promise<Trade[]> {
-    const response = await this.client.get<Trade[]>("/api/v1/recentTrades", {
-      market_id: params.market_id,
-      limit: params.limit,
-    });
+    const response = await this.client.get<Trade[]>(
+      "/api/v1/recentTrades",
+      {
+        market_id: params.market_id,
+        limit: params.limit,
+      },
+      {
+        transformResponse: [(data) => JSONbig.parse(data)],
+      }
+    );
     return response.data;
   }
 
@@ -203,8 +203,13 @@ export class OrderApi {
     };
 
     const config = params.authorization
-      ? { headers: { Authorization: params.authorization } }
-      : undefined;
+      ? {
+          headers: { Authorization: params.authorization },
+          transformResponse: [(data: any) => JSONbig.parse(data)],
+        }
+      : {
+          transformResponse: [(data: any) => JSONbig.parse(data)],
+        };
 
     const response = await this.client.get<TradesResponse>(
       "/api/v1/trades",
@@ -217,15 +222,26 @@ export class OrderApi {
   public async getAccountActiveOrders(
     accountIndex: number,
     marketId: number,
-    auth?: string
-  ): Promise<Order[]> {
-    const response = await this.client.get<Order[]>(
+    auth?: string,
+    authorization?: string
+  ): Promise<Orders> {
+    const config = authorization
+      ? {
+          headers: { Authorization: authorization },
+          transformResponse: [(data: any) => JSONbig.parse(data)],
+        }
+      : {
+          transformResponse: [(data: any) => JSONbig.parse(data)],
+        };
+
+    const response = await this.client.get<Orders>(
       "/api/v1/accountActiveOrders",
       {
         account_index: accountIndex,
         market_id: marketId,
         ...(auth ? { auth } : {}),
-      }
+      },
+      config
     );
     return response.data;
   }
@@ -249,6 +265,9 @@ export class OrderApi {
         ...(auth ? { auth } : {}),
         ...(marketId !== undefined ? { market_id: marketId } : {}),
         ...params,
+      },
+      {
+        transformResponse: [(data: any) => JSONbig.parse(data)],
       }
     );
     return response.data;
